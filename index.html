@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10281f">
+  <title>Tichu · QQND</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">天</span>
+        <div><b>TICHU</b><small>QQND CARD TABLE</small></div>
+      </div>
+      <div class="scoreboard">
+        <div><small>TEAM A · YOU + WEI</small><strong id="score-a">0</strong></div>
+        <span>:</span>
+        <div><small>TEAM B · MEI + LIN</small><strong id="score-b">0</strong></div>
+      </div>
+      <div class="top-actions">
+        <button data-action="open-log" class="ghost">Log</button>
+        <button data-action="open-rules" class="ghost">Rules</button>
+        <button data-action="open-multiplayer" class="ghost">Online</button>
+        <button data-action="new-match" class="primary">New match</button>
+      </div>
+    </header>
+
+    <main class="table-shell">
+      <section class="table" aria-label="Tichu table">
+        <div class="felt-pattern"></div>
+        <div class="seat seat-top" data-seat="2"></div>
+        <div class="seat seat-left" data-seat="1"></div>
+        <div class="seat seat-right" data-seat="3"></div>
+        <div class="center">
+          <div id="wish-chip" class="wish-chip hidden"></div>
+          <div id="table-pile" class="table-pile"></div>
+          <div id="turn-status" class="turn-status"></div>
+          <div class="table-actions">
+            <button data-action="play" id="play-btn" class="primary" disabled>Play</button>
+            <button data-action="pass" id="pass-btn" class="secondary" disabled>Pass</button>
+            <button data-action="call-tichu" id="tichu-btn" class="secondary">Tichu +100</button>
+          </div>
+        </div>
+        <div class="seat seat-bottom" data-seat="0"></div>
+      </section>
+    </main>
+
+    <aside id="log-panel" class="drawer hidden">
+      <div class="drawer-head"><h2>Game log</h2><button data-action="close-drawer">×</button></div>
+      <div id="game-log" class="log-list"></div>
+    </aside>
+
+    <div id="modal-root"></div>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+  </div>
+  <script type="module" src="./src/ui.js"></script>
+</body>
+</html>
