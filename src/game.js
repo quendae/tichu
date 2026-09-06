@@ -1,0 +1,236 @@
+import { makeDeck, cardPoints, classify, possibleSelections, canFulfillWishFromSelection } from './rules.js';
+
+const BOT_NAMES=['Mei','Lin','Wei'];
+const teamOf = seat => seat%2;
+
+function shuffle(cards, rng=Math.random) {
+  const a=[...cards];
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];}
+  return a;
+}
+function sortHand(hand){
+  const sp={mahjong:-4,dog:-3,phoenix:30,dragon:31};
+  hand.sort((a,b)=>{
+    const av=a.special?sp[a.special]:a.rank, bv=b.special?sp[b.special]:b.rank;
+    return av-bv || String(a.suit).localeCompare(String(b.suit));
+  });
+}
+function removeCards(hand, ids){ const s=new Set(ids); return hand.filter(c=>!s.has(c.id)); }
+
+export class TichuGame extends EventTarget {
+  constructor({botDelay=500}={}) {
+    super();
+    this.botDelay=botDelay;
+    this.state=this.newState();
+    this.botTimer=null;
+  }
+  newState(){
+    return {
+      phase:'menu', round:0, dealer:0, currentPlayer:0, trickLeader:0,
+      hands:[[],[],[],[]], captured:[[],[],[],[]], finished:[],
+      table:[], lastPlay:null, passes:0, wish:null, selected:new Set(),
+      passSelections:{}, exchangeDone:[false,false,false,false],
+      declarations:[null,null,null,null], grandWindow:true,
+      scores:[0,0], roundScore:[0,0], names:['You',...BOT_NAMES],
+      log:[], status:'', winnerTeam:null, dragonRecipient:null, multiplayer:false,
+      settings:{botDifficulty:'normal',animations:true,sound:true},
+    };
+  }
+  emit(){ this.dispatchEvent(new CustomEvent('change',{detail:this.state})); }
+  log(text){ this.state.log.unshift({id:crypto?.randomUUID?.()||Math.random().toString(36),text,time:Date.now()}); this.state.log=this.state.log.slice(0,80); }
+  resetMatch(){ const settings=this.state.settings; this.state=this.newState(); this.state.settings=settings; this.startRound(); }
+  startRound(){
+    clearTimeout(this.botTimer);
+    const s=this.state;
+    s.round++; s.phase='grand'; s.table=[];s.lastPlay=null;s.passes=0;s.wish=null;s.finished=[];s.captured=[[],[],[],[]];
+    s.selected=new Set();s.passSelections={};s.exchangeDone=[false,false,false,false];s.declarations=[null,null,null,null];s.grandWindow=true;s.dragonRecipient=null;
+    const deck=shuffle(makeDeck());
+    s.hands=[deck.slice(0,8),deck.slice(8,16),deck.slice(16,24),deck.slice(24,32)];
+    s.remainingDeck=deck.slice(32);
+    s.hands.forEach(sortHand);
+    this.log(`Round ${s.round}: first 8 cards dealt. Grand Tichu window.`);
+    s.currentPlayer=0; this.emit(); this.scheduleBots();
+  }
+  declareGrand(seat,yes){
+    const s=this.state;if(s.phase!=='grand'||s.declarations[seat])return false;
+    s.declarations[seat]=yes?'grand':'none'; this.log(`${s.names[seat]} ${yes?'calls Grand Tichu':'passes Grand Tichu'}.`);
+    if(s.declarations.every(Boolean)) this.finishGrandWindow();
+    this.emit(); return true;
+  }
+  finishGrandWindow(){
+    const s=this.state;
+    for(let seat=0;seat<4;seat++) s.hands[seat].push(...s.remainingDeck.slice(seat*6,seat*6+6));
+    s.remainingDeck=[];s.hands.forEach(sortHand);s.phase='exchange';s.grandWindow=false;
+    this.log('All players now have 14 cards. Choose one card for each other player.');
+  }
+  declareTichu(seat){
+    const s=this.state;if(s.declarations[seat]==='grand'||s.declarations[seat]==='tichu')return false;
+    if(s.hands[seat].length!==14)return false;
+    s.declarations[seat]='tichu';this.log(`${s.names[seat]} calls Tichu!`);this.emit();return true;
+  }
+  submitExchange(seat, map){
+    const s=this.state;if(s.phase!=='exchange'||s.exchangeDone[seat])return false;
+    const targets=[0,1,2,3].filter(x=>x!==seat);
+    if(!targets.every(t=>map[t]))return false;
+    const ids=Object.values(map); if(new Set(ids).size!==3||!ids.every(id=>s.hands[seat].some(c=>c.id===id))) return false;
+    s.passSelections[seat]={...map};s.exchangeDone[seat]=true;this.log(`${s.names[seat]} locked exchange.`);
+    if(s.exchangeDone.every(Boolean)) this.resolveExchange();
+    this.emit();return true;
+  }
+  resolveExchange(){
+    const s=this.state, incoming=[[],[],[],[]];
+    for(let from=0;from<4;from++){
+      for(const [toStr,id] of Object.entries(s.passSelections[from])){
+        const to=Number(toStr), card=s.hands[from].find(c=>c.id===id);incoming[to].push(card);
+      }
+      s.hands[from]=removeCards(s.hands[from],Object.values(s.passSelections[from]));
+    }
+    for(let i=0;i<4;i++){s.hands[i].push(...incoming[i]);sortHand(s.hands[i]);}
+    s.phase='play';
+    const starter=s.hands.findIndex(h=>h.some(c=>c.special==='mahjong'));s.currentPlayer=starter;s.trickLeader=starter;
+    this.log(`${s.names[starter]} has Mah Jong and leads.`);
+    this.scheduleBots();
+  }
+  select(cardId){
+    const s=this.state;if(s.phase!=='play'||s.currentPlayer!==0)return;
+    if(s.selected.has(cardId))s.selected.delete(cardId);else s.selected.add(cardId);this.emit();
+  }
+  selectedPlay(){
+    const s=this.state, cards=s.hands[0].filter(c=>s.selected.has(c.id));
+    return classify(cards,s.lastPlay?.type==='single'?s.lastPlay.value:null);
+  }
+  canPlayerFulfillWish(seat){
+    const s=this.state;if(!s.wish)return false;
+    return possibleSelections(s.hands[seat],s.lastPlay,s.wish).some(x=>x.fulfills);
+  }
+  playSelected(wishRank=null){ const ids=[...this.state.selected];return this.playCards(0,ids,wishRank); }
+  playCards(seat,ids,wishRank=null,{bomb=false}={}){
+    const s=this.state;if(s.phase!=='play')return {ok:false,error:'Not in play phase'};
+    if(!bomb&&seat!==s.currentPlayer)return {ok:false,error:'Not your turn'};
+    const cards=s.hands[seat].filter(c=>ids.includes(c.id));
+    if(cards.length!==ids.length)return {ok:false,error:'Card unavailable'};
+    const play=classify(cards,s.lastPlay?.type==='single'?s.lastPlay.value:null);
+    if(!play||!((awaitBeat=>awaitBeat)(import.meta && true))){ /* keep parser-friendly branch below */ }
+    if(!play)return {ok:false,error:'Invalid combination'};
+    const { beats } = globalThis.__tichuRulesCompat || {};
+    // Inline comparison avoids circular state; classification is already deterministic.
+    const canBeat = !s.lastPlay || play.type==='bomb' ? (!s.lastPlay || s.lastPlay.type!=='bomb' || (play.type==='bomb' && (play.bomb.kind!==s.lastPlay.bomb.kind ? play.bomb.kind==='straight-flush' : (play.bomb.kind==='straight-flush'&&play.bomb.size!==s.lastPlay.bomb.size ? play.bomb.size>s.lastPlay.bomb.size : play.bomb.high>s.lastPlay.bomb.high)))) : (s.lastPlay.type!=='bomb' && play.type===s.lastPlay.type && play.length===s.lastPlay.length && play.value>s.lastPlay.value);
+    if(!canBeat)return {ok:false,error:'Invalid or insufficient combination'};
+    if(s.lastPlay===null && cards.some(c=>c.special==='dog') && cards.length!==1) return {ok:false,error:'Dog must be led alone'};
+    if(cards.some(c=>c.special==='dog') && s.lastPlay!==null) return {ok:false,error:'Dog can only be led'};
+    if(s.wish && this.canPlayerFulfillWish(seat) && !canFulfillWishFromSelection(play,s.wish)) return {ok:false,error:`Wish requires ${s.wish}`};
+    if(cards.some(c=>c.special==='mahjong') && wishRank && wishRank>=2&&wishRank<=14){s.wish=wishRank;this.log(`${s.names[seat]} wishes for ${wishRank}.`);}
+    if(s.wish && canFulfillWishFromSelection(play,s.wish)){this.log(`${s.names[seat]} fulfills the wish for ${s.wish}.`);s.wish=null;}
+    s.hands[seat]=removeCards(s.hands[seat],ids);s.selected.clear();
+    s.table.push({seat,cards,play});s.lastPlay=play;s.passes=0;
+    this.log(`${s.names[seat]} plays ${this.describe(play)}.`);
+    if(s.hands[seat].length===0 && !s.finished.includes(seat)){s.finished.push(seat);this.log(`${s.names[seat]} goes out #${s.finished.length}.`);}
+    if(this.checkDoubleVictory()) return {ok:true};
+    if(s.finished.length===3){this.finishRound();return {ok:true};}
+    if(cards[0]?.special==='dog'){
+      s.table=[];s.lastPlay=null;s.passes=0;
+      let partner=(seat+2)%4;if(s.finished.includes(partner))partner=this.nextActive(partner);
+      s.currentPlayer=partner;s.trickLeader=partner;this.log(`Dog passes the lead to ${s.names[partner]}.`);this.emit();this.scheduleBots();return {ok:true};
+    }
+    s.currentPlayer=this.nextActive(seat);this.emit();this.scheduleBots();return {ok:true};
+  }
+  describe(play){return `${play.type} (${play.cards.map(c=>c.special||c.rank).join(' ')})`;}
+  nextActive(from){
+    const s=this.state;let p=from;do{p=(p+1)%4;}while(s.finished.includes(p)&&s.finished.length<3);return p;
+  }
+  pass(seat){
+    const s=this.state;if(s.phase!=='play'||seat!==s.currentPlayer||!s.lastPlay)return false;
+    if(s.wish&&this.canPlayerFulfillWish(seat))return false;
+    s.passes++;this.log(`${s.names[seat]} passes.`);
+    const active=4-s.finished.length;
+    if(s.passes>=active-1){this.collectTrick();return true;}
+    s.currentPlayer=this.nextActive(seat);this.emit();this.scheduleBots();return true;
+  }
+  collectTrick(dragonRecipient=null){
+    const s=this.state;if(!s.lastPlay)return;
+    const winner=s.table.at(-1).seat;
+    const hasDragon=s.table.some(e=>e.cards.some(c=>c.special==='dragon'));
+    let recipient=winner;
+    if(hasDragon){
+      if(dragonRecipient==null && winner===0){s.dragonRecipient='needed';this.emit();return;}
+      const opponents=[0,1,2,3].filter(x=>teamOf(x)!==teamOf(winner));
+      recipient=opponents.includes(dragonRecipient)?dragonRecipient:opponents[0];
+      this.log(`${s.names[winner]} gives the Dragon trick to ${s.names[recipient]}.`);
+    }
+    for(const entry of s.table)s.captured[recipient].push(...entry.cards);
+    s.table=[];s.lastPlay=null;s.passes=0;s.dragonRecipient=null;
+    let leader=winner;if(s.finished.includes(leader))leader=this.nextActive(leader);
+    s.currentPlayer=leader;s.trickLeader=leader;this.emit();this.scheduleBots();
+  }
+  chooseDragonRecipient(seat){ if(this.state.dragonRecipient!=='needed')return;this.collectTrick(seat); }
+  checkDoubleVictory(){
+    const s=this.state;if(s.finished.length<2)return false;
+    const [a,b]=s.finished;if(teamOf(a)===teamOf(b)){this.finishRound(true);return true;}return false;
+  }
+  finishRound(double=false){
+    const s=this.state;clearTimeout(this.botTimer);s.phase='round-end';
+    let points=[0,0];
+    if(double){points[teamOf(s.finished[0])]=200;}
+    else{
+      const last=[0,1,2,3].find(x=>!s.finished.includes(x));
+      const first=s.finished[0];
+      if(last!=null){
+        s.captured[first].push(...s.captured[last]);
+        points[1-teamOf(last)] += s.hands[last].reduce((sum,c)=>sum+cardPoints(c),0);
+      }
+      for(let seat=0;seat<4;seat++) if(seat!==last) points[teamOf(seat)] += s.captured[seat].reduce((sum,c)=>sum+cardPoints(c),0);
+    }
+    for(let seat=0;seat<4;seat++){
+      const d=s.declarations[seat];
+      if(d==='tichu') points[teamOf(seat)] += s.finished[0]===seat?100:-100;
+      if(d==='grand') points[teamOf(seat)] += s.finished[0]===seat?200:-200;
+    }
+    s.roundScore=points;s.scores[0]+=points[0];s.scores[1]+=points[1];
+    this.log(`Round score: Team A ${points[0]}, Team B ${points[1]}.`);
+    if((s.scores[0]>=1000||s.scores[1]>=1000)&&s.scores[0]!==s.scores[1]){
+      s.phase='match-end';s.winnerTeam=s.scores[0]>s.scores[1]?0:1;this.log(`Team ${s.winnerTeam===0?'A':'B'} wins the match!`);
+    }
+    this.emit();
+  }
+  nextRound(){if(this.state.phase!=='round-end')return;this.startRound();}
+  scheduleBots(){
+    clearTimeout(this.botTimer);const s=this.state;
+    if(s.multiplayer && this.multiplayerHumanSeat!=null) return;
+    if(s.phase==='grand'){
+      const seat=s.declarations.findIndex((d,i)=>i>0&&!d);if(seat>0)this.botTimer=setTimeout(()=>{this.declareGrand(seat,this.botWantsGrand(seat));this.scheduleBots();},this.botDelay);return;
+    }
+    if(s.phase==='exchange'){
+      const seat=s.exchangeDone.findIndex((d,i)=>i>0&&!d);if(seat>0)this.botTimer=setTimeout(()=>{this.botExchange(seat);this.scheduleBots();},this.botDelay);return;
+    }
+    if(s.phase==='play'&&s.currentPlayer!==0) this.botTimer=setTimeout(()=>this.botTurn(s.currentPlayer),this.botDelay);
+  }
+  botWantsGrand(seat){return this.state.hands[seat].filter(c=>!c.special&&c.rank>=12).length>=4;}
+  botExchange(seat){
+    const s=this.state, hand=[...s.hands[seat]].sort((a,b)=>(a.rank||20)-(b.rank||20));
+    const targets=[0,1,2,3].filter(x=>x!==seat);
+    const partner=(seat+2)%4;
+    const best=[...hand].sort((a,b)=>(b.rank||0)-(a.rank||0))[0];
+    const lows=hand.filter(c=>c.id!==best?.id).slice(0,2);
+    const map={};map[partner]=best?.id||hand[0].id;
+    const enemies=targets.filter(t=>t!==partner);map[enemies[0]]=lows[0]?.id;map[enemies[1]]=lows[1]?.id;
+    this.submitExchange(seat,map);
+  }
+  botTurn(seat){
+    const s=this.state;if(s.currentPlayer!==seat||s.phase!=='play')return;
+    if(s.hands[seat].length===14 && s.declarations[seat]==='none' && this.botShouldTichu(seat)) this.declareTichu(seat);
+    const opts=possibleSelections(s.hands[seat],s.lastPlay,s.wish);
+    let legal=opts;if(s.wish&&opts.some(o=>o.fulfills)) legal=opts.filter(o=>o.fulfills);
+    let chosen=legal[0];if(!chosen){this.pass(seat);return;}
+    const nonBomb=legal.find(o=>o.play.type!=='bomb');if(nonBomb)chosen=nonBomb;
+    const wish=chosen.cards.some(c=>c.special==='mahjong')?this.botWish(seat,chosen.cards):null;
+    this.playCards(seat,chosen.cards.map(c=>c.id),wish);
+    if(this.state.dragonRecipient==='needed')this.collectTrick([0,1,2,3].find(x=>teamOf(x)!==teamOf(seat)));
+  }
+  botShouldTichu(seat){
+    const h=this.state.hands[seat];return h.filter(c=>c.special==='dragon'||c.special==='phoenix'||(!c.special&&c.rank>=12)).length>=5;
+  }
+  botWish(seat,selected){
+    const counts=new Map();for(const c of this.state.hands[seat])if(!c.special&&!selected.some(x=>x.id===c.id))counts.set(c.rank,(counts.get(c.rank)||0)+1);
+    return [...counts.entries()].sort((a,b)=>b[1]-a[1]||b[0]-a[0])[0]?.[0]||14;
+  }
+}
