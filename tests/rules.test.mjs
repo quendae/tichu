@@ -1,0 +1,36 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { makeDeck, classify, beats, cardPoints } from '../src/rules.js';
+
+const deck=makeDeck(), by=id=>deck.find(c=>c.id===id), r=(suit,n)=>by(`${suit}-${n}`);
+
+test('deck has 56 unique cards',()=>{
+  assert.equal(deck.length,56);assert.equal(new Set(deck.map(c=>c.id)).size,56);
+});
+test('basic combinations classify correctly',()=>{
+  assert.equal(classify([r('jade',7)]).type,'single');
+  assert.equal(classify([r('jade',7),r('sword',7)]).type,'pair');
+  assert.equal(classify([r('jade',7),r('sword',7),r('star',7)]).type,'triple');
+  assert.equal(classify([r('jade',7),r('sword',7),r('star',7),r('jade',9),r('sword',9)]).type,'full-house');
+  assert.equal(classify([r('jade',3),r('sword',4),r('star',5),r('jade',6),r('sword',7)]).type,'straight');
+  assert.equal(classify([r('jade',3),r('sword',3),r('star',4),r('jade',4)]).type,'steps');
+});
+test('phoenix works in legal non-bomb combinations',()=>{
+  const p=by('phoenix');
+  assert.equal(classify([r('jade',9),p]).type,'pair');
+  assert.equal(classify([r('jade',3),r('sword',4),p,r('jade',6),r('sword',7)]).type,'straight');
+  assert.equal(classify([r('jade',8),r('sword',8),p,r('jade',5),r('sword',5)]).type,'full-house');
+});
+test('bomb hierarchy works',()=>{
+  const four=classify(['jade','sword','pagoda','star'].map(s=>r(s,8)));
+  const sf=classify([4,5,6,7,8].map(n=>r('jade',n)));
+  assert.equal(four.type,'bomb');assert.equal(sf.type,'bomb');assert.equal(beats(sf,four),true);
+});
+test('dragon and phoenix scoring',()=>{
+  assert.equal(cardPoints(by('dragon')),25);assert.equal(cardPoints(by('phoenix')),-25);
+  assert.equal(cardPoints(r('jade',5)),5);assert.equal(cardPoints(r('jade',10)),10);assert.equal(cardPoints(r('jade',13)),10);
+});
+test('phoenix as a single is half rank higher and cannot beat dragon',()=>{
+  const eight=classify([r('jade',8)]), p=classify([by('phoenix')],8), nine=classify([r('jade',9)]), dragon=classify([by('dragon')]);
+  assert.equal(p.value,8.5);assert.equal(beats(p,eight),true);assert.equal(beats(nine,p),true);assert.equal(beats(p,dragon),false);
+});
