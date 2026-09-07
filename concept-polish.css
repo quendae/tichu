@@ -10,7 +10,7 @@
   .decision-ribbon .inline-actions{width:100%;justify-content:flex-end}
   .decision-ribbon .inline-actions button{min-width:0;flex:1;padding-inline:7px;font-size:9px}
   .grand-ribbon span{max-width:230px}
-  .coach-dock{bottom:98px}
+  .coach-dock{bottom:122px}
 }
 
 @media(max-height:520px) and (orientation:landscape){
@@ -19,14 +19,15 @@
   .table-menu .menu-button{display:grid!important;width:34px;height:30px;grid-template-columns:1fr;place-items:center;padding:0;margin:0}
   .table-menu .menu-button b,.table-menu .menu-button i{display:none}
   .table-menu .menu-button span{font-size:12px}
-  .seat-top{top:1px;transform:translateX(-50%) scale(.78);transform-origin:center top}
+  .seat-top{top:-2px;transform:translateX(-50%) scale(.66);transform-origin:center top}
   .seat-left,.seat-right{top:52%}
-  .center{top:40%;width:56vw;gap:3px}
-  .context-panel{position:absolute;top:-86px;width:100%}
-  .decision-ribbon{padding:7px 9px;gap:8px}
-  .decision-ribbon small{font-size:6px}.decision-ribbon b{font-size:12px}.decision-ribbon span{font-size:7px}
-  .inline-actions button{height:30px;font-size:8px;padding-inline:9px}
-  .table-pile{min-height:72px}.trick-stage{height:78px}
+  .center{top:43%;width:54vw;gap:2px}
+  .context-panel{position:relative;top:auto;width:100%;z-index:30}
+  .grand-ribbon{max-width:430px;margin:0 auto}
+  .decision-ribbon{padding:5px 7px;gap:6px}
+  .decision-ribbon small{font-size:6px}.decision-ribbon b{font-size:11px}.decision-ribbon span{font-size:6.5px}
+  .inline-actions button{height:28px;font-size:8px;padding-inline:8px}
+  .table-pile{min-height:50px}.trick-stage{height:62px}
   .coach-dock{right:8px;bottom:72px;width:220px;padding:8px 10px}
   .coach-kicker{font-size:7px}.coach-copy>b{font-size:11px}.coach-copy p{display:none}.coach-meta{font-size:6px}
   .coach-actions{margin-top:5px}.coach-hint,.coach-toggle{height:29px;font-size:7px}
