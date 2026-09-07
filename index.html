@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="pl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#10281f">
+  <meta name="theme-color" content="#07110e">
   <title>Tichu · QQND</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -11,28 +11,49 @@
   <div id="app">
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">天</span>
-        <div><b>TICHU</b><small>QQND CARD TABLE</small></div>
+        <span class="brand-word">TICHU</span>
+        <small>GRAJ · MYŚL · RAZEM</small>
       </div>
-      <div class="scoreboard">
-        <div><small id="team-a-label">TEAM A</small><strong id="score-a">0</strong></div>
-        <span>:</span>
-        <div><small id="team-b-label">TEAM B</small><strong id="score-b">0</strong></div>
+      <div class="scoreboard" aria-label="Wynik meczu">
+        <div class="score-team score-team-a"><small id="team-a-label">MY</small><strong id="score-a">0</strong></div>
+        <span class="score-seal">天</span>
+        <div class="score-team score-team-b"><small id="team-b-label">ONI</small><strong id="score-b">0</strong></div>
       </div>
-      <div class="top-actions" aria-label="Game menu">
-        <button data-action="open-log" class="ghost">Log</button>
-        <button data-action="open-rules" class="ghost">Rules</button>
-        <button data-action="open-multiplayer" class="ghost">Online</button>
-        <button data-action="new-match" class="primary">New match</button>
+      <div class="top-actions compact-actions" aria-label="Szybkie akcje">
+        <button data-action="open-log" class="icon-ghost" title="Historia" aria-label="Historia">☷</button>
+        <button data-action="open-multiplayer" class="icon-ghost" title="Gra online" aria-label="Gra online">◎</button>
       </div>
     </header>
 
+    <nav class="table-menu" aria-label="Menu gry">
+      <div class="menu-brand"><b>TICHU</b><small>QQND CARD TABLE</small></div>
+      <button data-action="new-match" class="menu-button"><span>↻</span><b>Nowa gra</b></button>
+      <button data-action="open-rules" class="menu-button"><span>▣</span><b>Zasady</b></button>
+      <button data-action="coach-toggle" class="menu-button coach-menu active"><span>🎓</span><b>Tryb początkującego</b><i id="coach-menu-state">ON</i></button>
+      <button data-action="open-multiplayer" class="menu-button"><span>⌁</span><b>Online</b></button>
+      <button data-action="open-log" class="menu-button"><span>☷</span><b>Historia</b></button>
+    </nav>
+
     <main class="table-shell">
-      <section class="table" aria-label="Tichu table">
+      <div class="scene-backdrop" aria-hidden="true">
+        <div class="mountain mountain-a"></div>
+        <div class="mountain mountain-b"></div>
+        <div class="pagoda-silhouette"></div>
+        <div class="blossom blossom-a"></div>
+        <div class="blossom blossom-b"></div>
+      </div>
+
+      <section class="table" aria-label="Stół do Tichu">
+        <div class="table-brass table-brass-left" aria-hidden="true"></div>
+        <div class="table-brass table-brass-right" aria-hidden="true"></div>
         <div class="felt-pattern" aria-hidden="true"></div>
+        <div class="felt-dragon" aria-hidden="true">龍</div>
+
         <div class="seat seat-top" data-seat="2"></div>
         <div class="seat seat-left" data-seat="1"></div>
         <div class="seat seat-right" data-seat="3"></div>
+
+        <aside class="table-quote" aria-hidden="true">„Dobra drużyna<br>widzi więcej.”</aside>
 
         <div class="center">
           <div id="wish-chip" class="wish-chip hidden"></div>
@@ -41,9 +62,9 @@
           <div id="wish-bar" class="wish-bar hidden"></div>
           <div id="turn-status" class="turn-status" aria-live="polite"></div>
           <div class="table-actions">
-            <button data-action="play" id="play-btn" class="primary" disabled>Play</button>
-            <button data-action="pass" id="pass-btn" class="secondary" disabled>Pass</button>
-            <button data-action="call-tichu" id="tichu-btn" class="secondary">Tichu +100</button>
+            <button data-action="pass" id="pass-btn" class="secondary action-pass" disabled>Spasuj</button>
+            <button data-action="call-tichu" id="tichu-btn" class="secondary action-tichu">Tichu +100</button>
+            <button data-action="play" id="play-btn" class="primary action-play" disabled>Zagraj</button>
           </div>
           <div id="round-summary" class="round-summary hidden"></div>
         </div>
@@ -54,9 +75,15 @@
     </main>
 
     <aside id="log-panel" class="drawer hidden">
-      <div class="drawer-head"><h2>Game log</h2><button data-action="close-drawer" aria-label="Close game log">×</button></div>
+      <div class="drawer-head"><h2>Historia gry</h2><button data-action="close-drawer" aria-label="Zamknij historię">×</button></div>
       <div id="game-log" class="log-list"></div>
     </aside>
+
+    <footer class="statusbar">
+      <span>Tichu v0.2.0</span><i></i><span id="mode-status">Gra lokalna · 3 boty</span>
+      <span class="status-spacer"></span>
+      <span id="coach-status">🎓 Coach: ON</span><i></i><span id="round-status">Runda 1</span><i></i><span id="turn-status-footer">Twój ruch</span>
+    </footer>
 
     <div id="modal-root"></div>
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
