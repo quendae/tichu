@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 
 for(const route of ['/']){
-  test(`approved table concept renders without overflow ${route}`,async({page},testInfo)=>{
+  test(`approved table concept renders without clipped hand ${route}`,async({page},testInfo)=>{
     const errors=[];page.on('console',msg=>{if(msg.type()==='error')errors.push(msg.text())});page.on('pageerror',err=>errors.push(err.message));
     await page.goto(route);
     await expect(page).toHaveTitle(/Tichu/i);
@@ -13,6 +13,21 @@ for(const route of ['/']){
 
     const overflow=await page.evaluate(()=>({body:document.body.scrollWidth-innerWidth,html:document.documentElement.scrollWidth-innerWidth}));
     expect(overflow.body).toBeLessThanOrEqual(1);expect(overflow.html).toBeLessThanOrEqual(1);
+
+    // Exercise worst-case hand geometry without changing the game rules: render 14 visible cards.
+    await page.evaluate(()=>{
+      const game=window.tichu.game,state=game.state;
+      state.hands[0]=[...state.hands[0],...state.hands[1].slice(0,6)].map((card,index)=>({...card,id:`layout-${index}-${card.id}`}));
+      game.dispatchEvent(new CustomEvent('change',{detail:state}));
+    });
+    await expect(page.locator('.seat-bottom .card')).toHaveCount(14);
+    const cardBounds=await page.locator('.seat-bottom .card').evaluateAll(cards=>cards.map(card=>{
+      const r=card.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};
+    }));
+    for(const r of cardBounds){
+      expect(r.left).toBeGreaterThanOrEqual(-1);expect(r.right).toBeLessThanOrEqual((await page.evaluate(()=>innerWidth))+1);
+      expect(r.top).toBeGreaterThanOrEqual(-1);expect(r.bottom).toBeLessThanOrEqual((await page.evaluate(()=>innerHeight))+1);
+    }
 
     await page.locator('[data-action="coach-toggle"]').first().click();
     await expect(page.locator('#coach-menu-state')).toHaveText('OFF');
