@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeDeck, classify, beats, cardPoints } from '../src/rules.js';
+import { makeDeck, classify, beats, cardPoints, describePlay, legalCardIds } from '../src/rules.js';
 
 const deck=makeDeck(), by=id=>deck.find(c=>c.id===id), r=(suit,n)=>by(`${suit}-${n}`);
 
@@ -41,4 +41,17 @@ test('dragon and phoenix scoring',()=>{
 test('phoenix as a single is half rank higher and cannot beat dragon',()=>{
   const eight=classify([r('jade',8)]), p=classify([by('phoenix')],8), nine=classify([r('jade',9)]), dragon=classify([by('dragon')]);
   assert.equal(p.value,8.5);assert.equal(beats(p,eight),true);assert.equal(beats(nine,p),true);assert.equal(beats(p,dragon),false);
+});
+test('coach helpers describe combinations and expose only cards from legal wish moves',()=>{
+  const pair=classify([r('jade',12),r('sword',12)]);
+  const straight=classify([r('jade',6),r('sword',7),r('star',8),r('pagoda',9),r('jade',10)]);
+  const bomb=classify(['jade','sword','pagoda','star'].map(s=>r(s,9)));
+  assert.match(describePlay(pair),/pair/i);
+  assert.match(describePlay(straight),/straight/i);
+  assert.match(describePlay(bomb),/bomb/i);
+
+  const previous=classify([r('jade',6),r('sword',6)]);
+  const hand=[r('jade',7),r('sword',7),r('jade',8),r('sword',8),r('star',9)];
+  const ids=legalCardIds(hand,previous,8);
+  assert.deepEqual([...ids].sort(),['jade-8','sword-8']);
 });
