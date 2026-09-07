@@ -207,3 +207,36 @@ export function possibleSelections(hand, previous=null, wishRank=null) {
   });
   return out;
 }
+
+function rankName(value) {
+  return ({11:'jack',12:'queen',13:'king',14:'ace',15:'dragon'})[value] || String(value);
+}
+
+export function describePlay(play) {
+  if(!play) return 'invalid selection';
+  if(play.type==='single') {
+    const special=play.cards?.[0]?.special;
+    if(special) return special==='mahjong' ? 'Mah Jong' : special[0].toUpperCase()+special.slice(1);
+    return `single ${rankName(Math.floor(play.value))}`;
+  }
+  if(play.type==='pair') return `pair of ${rankName(play.value)}s`;
+  if(play.type==='triple') return `triple ${rankName(play.value)}s`;
+  if(play.type==='full-house') return `full house, ${rankName(play.value)}s high`;
+  if(play.type==='steps') return `consecutive pairs to ${rankName(play.value)}`;
+  if(play.type==='straight') return `straight to ${rankName(play.value)}`;
+  if(play.type==='bomb') return play.bomb.kind==='four'
+    ? `four-of-a-kind bomb, ${rankName(play.value)}s`
+    : `${play.length}-card straight-flush bomb to ${rankName(play.value)}`;
+  return play.type;
+}
+
+export function legalCardIds(hand, previous=null, wishRank=null) {
+  const options=possibleSelections(hand,previous,wishRank);
+  const mustFulfill=!!wishRank && options.some(option=>option.fulfills);
+  const ids=new Set();
+  for(const option of options) {
+    if(mustFulfill && !option.fulfills) continue;
+    option.cards.forEach(card=>ids.add(card.id));
+  }
+  return ids;
+}
