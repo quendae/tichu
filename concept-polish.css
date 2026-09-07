@@ -4,8 +4,7 @@
 .player-hand .card+.card,.opponent-hand-top .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
 
 @media(max-width:680px){
-  :root{--hand-step:20px}
-  .player-hand{width:min(312px,calc(100vw - 34px));justify-content:center;padding-left:0}
+  .player-hand{--hand-step:20px;width:min(312px,calc(100vw - 34px));justify-content:center;padding-left:0}
   .player-hand .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
   .decision-ribbon{display:grid;grid-template-columns:1fr;gap:7px}
   .decision-ribbon .inline-actions{width:100%;justify-content:flex-end}
@@ -15,7 +14,6 @@
 }
 
 @media(max-height:520px) and (orientation:landscape){
-  :root{--hand-step:32px}
   .table-menu{top:47px;left:8px;width:auto;padding:3px;display:flex;gap:2px;border-radius:8px}
   .table-menu .menu-brand{display:none}
   .table-menu .menu-button{display:grid!important;width:34px;height:30px;grid-template-columns:1fr;place-items:center;padding:0;margin:0}
@@ -32,7 +30,7 @@
   .coach-dock{right:8px;bottom:72px;width:220px;padding:8px 10px}
   .coach-kicker{font-size:7px}.coach-copy>b{font-size:11px}.coach-copy p{display:none}.coach-meta{font-size:6px}
   .coach-actions{margin-top:5px}.coach-hint,.coach-toggle{height:29px;font-size:7px}
-  .player-hand{width:min(470px,60vw);justify-content:center}
+  .player-hand{--hand-step:28px;width:min(470px,60vw);justify-content:center}
   .player-hand .card+.card{margin-left:calc(var(--hand-step) - 46px)}
 }
 
