@@ -21,6 +21,14 @@ test('phoenix works in legal non-bomb combinations',()=>{
   assert.equal(classify([r('jade',3),r('sword',4),p,r('jade',6),r('sword',7)]).type,'straight');
   assert.equal(classify([r('jade',8),r('sword',8),p,r('jade',5),r('sword',5)]).type,'full-house');
 });
+test('mah jong cannot form pairs, full houses or steps and phoenix cannot replace rank one',()=>{
+  const m=by('mahjong'), p=by('phoenix');
+  assert.equal(classify([m,p]),null);
+  assert.equal(classify([m,p,r('jade',2),r('sword',2)]),null);
+  assert.equal(classify([m,p,r('jade',2),r('sword',2),r('star',2)]),null);
+  const allNormalRanks=[2,3,4,5,6,7,8,9,10,11,12,13,14].map((rank,index)=>r(['jade','sword','pagoda','star'][index%4],rank));
+  assert.equal(classify([...allNormalRanks,p]),null);
+});
 test('bomb hierarchy works',()=>{
   const four=classify(['jade','sword','pagoda','star'].map(s=>r(s,8)));
   const sf=classify([4,5,6,7,8].map(n=>r('jade',n)));
