@@ -11,7 +11,7 @@ test('Coach explains an opening lead and returns legal cards without hidden-hand
   const s=state({hands:[[r('jade',3),r('sword',3),r('star',8),by('dog')],[r('jade',14),r('sword',14)],[by('dragon')],[by('phoenix')]]});
   const model=buildCoachModel(s,{...baseUi});
   assert.match(model.body,/rozpocz|legal/i);assert.ok(model.legalCardIds.has('jade-3'));assert.ok(model.optionCount>0);
-  const combined=`${model.title} ${model.body} ${model.selectedLabel||''}`;assert.doesNotMatch(combined,/as|smok|feniks/i);
+  const combined=`${model.title} ${model.body} ${model.selectedLabel||''}`;assert.doesNotMatch(combined,/\bAs\b|Smok|Feniks/i);
 });
 
 test('Coach explains how to answer a pair and validates a selected higher pair',()=>{
