@@ -38,6 +38,7 @@ export function displayRank(card) {
 const normals = cards => cards.filter(c=>!c.special || c.special==='mahjong');
 const phoenixCount = cards => cards.filter(c=>c.special==='phoenix').length;
 const forbiddenCombo = cards => cards.some(c=>c.special==='dog' || c.special==='dragon');
+const hasMahjong = cards => cards.some(c=>c.special==='mahjong');
 
 function groupsByRank(cards) {
   const m = new Map();
@@ -60,14 +61,16 @@ function straightInfo(cards) {
   for (let start=1; start<=maxStart; start++) {
     const seq = Array.from({length:cards.length},(_,i)=>start+i);
     const missing = seq.filter(r=>!rs.includes(r));
-    if (missing.length===p && rs.every(r=>seq.includes(r))) candidates.push({ high: seq.at(-1), phoenixAs: missing[0] ?? null });
+    if (missing.length===p && rs.every(r=>seq.includes(r)) && !(p && missing[0]===1)) {
+      candidates.push({ high: seq.at(-1), phoenixAs: missing[0] ?? null });
+    }
   }
   if (!candidates.length) return null;
   return candidates.sort((a,b)=>b.high-a.high)[0];
 }
 
 function stepsInfo(cards) {
-  if (cards.length < 4 || cards.length%2 || forbiddenCombo(cards) || phoenixCount(cards)>1) return null;
+  if (cards.length < 4 || cards.length%2 || forbiddenCombo(cards) || hasMahjong(cards) || phoenixCount(cards)>1) return null;
   const p = phoenixCount(cards), needPairs=cards.length/2;
   const g=groupsByRank(cards), rs=[...g.keys()].sort((a,b)=>a-b);
   if (!rs.length) return null;
@@ -84,7 +87,7 @@ function stepsInfo(cards) {
 }
 
 function sameRankWithPhoenix(cards, wanted) {
-  if (cards.length!==wanted || forbiddenCombo(cards) || phoenixCount(cards)>1) return null;
+  if (cards.length!==wanted || forbiddenCombo(cards) || hasMahjong(cards) || phoenixCount(cards)>1) return null;
   const p=phoenixCount(cards), g=groupsByRank(cards);
   if (g.size!==1) return null;
   const [rank, group]=[...g.entries()][0];
@@ -92,7 +95,7 @@ function sameRankWithPhoenix(cards, wanted) {
 }
 
 function fullHouseInfo(cards) {
-  if (cards.length!==5 || forbiddenCombo(cards) || phoenixCount(cards)>1) return null;
+  if (cards.length!==5 || forbiddenCombo(cards) || hasMahjong(cards) || phoenixCount(cards)>1) return null;
   const p=phoenixCount(cards), g=groupsByRank(cards), entries=[...g.entries()].map(([rank,arr])=>[rank,arr.length]);
   const candidates=[];
   for (const [tr,tc] of entries) for (const [pr,pc] of entries) {
@@ -203,4 +206,37 @@ export function possibleSelections(hand, previous=null, wishRank=null) {
     return a.play.value-b.play.value || a.cards.length-b.cards.length;
   });
   return out;
+}
+
+function rankName(value) {
+  return ({11:'jack',12:'queen',13:'king',14:'ace',15:'dragon'})[value] || String(value);
+}
+
+export function describePlay(play) {
+  if(!play) return 'invalid selection';
+  if(play.type==='single') {
+    const special=play.cards?.[0]?.special;
+    if(special) return special==='mahjong' ? 'Mah Jong' : special[0].toUpperCase()+special.slice(1);
+    return `single ${rankName(Math.floor(play.value))}`;
+  }
+  if(play.type==='pair') return `pair of ${rankName(play.value)}s`;
+  if(play.type==='triple') return `triple ${rankName(play.value)}s`;
+  if(play.type==='full-house') return `full house, ${rankName(play.value)}s high`;
+  if(play.type==='steps') return `consecutive pairs to ${rankName(play.value)}`;
+  if(play.type==='straight') return `straight to ${rankName(play.value)}`;
+  if(play.type==='bomb') return play.bomb.kind==='four'
+    ? `four-of-a-kind bomb, ${rankName(play.value)}s`
+    : `${play.length}-card straight-flush bomb to ${rankName(play.value)}`;
+  return play.type;
+}
+
+export function legalCardIds(hand, previous=null, wishRank=null) {
+  const options=possibleSelections(hand,previous,wishRank);
+  const mustFulfill=!!wishRank && options.some(option=>option.fulfills);
+  const ids=new Set();
+  for(const option of options) {
+    if(mustFulfill && !option.fulfills) continue;
+    option.cards.forEach(card=>ids.add(card.id));
+  }
+  return ids;
 }

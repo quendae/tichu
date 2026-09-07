@@ -1,0 +1,43 @@
+/* Fidelity and responsive corrections after Playwright screenshot review. */
+
+/* Avoid CSS multiplication in calc(): simple subtraction is portable and keeps the fan deterministic. */
+.player-hand .card+.card,.opponent-hand-top .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
+
+@media(max-width:680px){
+  .player-hand{--hand-step:20px;width:min(312px,calc(100vw - 34px));justify-content:center;padding-left:0}
+  .player-hand .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
+  .player-hand .card.special .card-corner strong{font-size:8px;letter-spacing:-.04em}
+  .decision-ribbon{display:grid;grid-template-columns:1fr;gap:7px}
+  .decision-ribbon .inline-actions{width:100%;justify-content:flex-end}
+  .decision-ribbon .inline-actions button{min-width:0;flex:1;padding-inline:7px;font-size:9px}
+  .grand-ribbon span{max-width:230px}
+  .coach-dock{bottom:122px}
+}
+
+@media(max-height:520px) and (orientation:landscape){
+  .table-menu{top:47px;left:8px;width:auto;padding:3px;display:flex;gap:2px;border-radius:8px}
+  .table-menu .menu-brand{display:none}
+  .table-menu .menu-button{display:grid!important;width:34px;height:30px;grid-template-columns:1fr;place-items:center;padding:0;margin:0}
+  .table-menu .menu-button b,.table-menu .menu-button i{display:none}
+  .table-menu .menu-button span{font-size:12px}
+  .seat-top{top:-2px;transform:translateX(-50%) scale(.66);transform-origin:center top}
+  .seat-left,.seat-right{top:52%}
+  .center{top:43%;width:54vw;gap:2px}
+  .context-panel{position:relative;top:auto;width:100%;z-index:30}
+  .grand-ribbon{max-width:430px;margin:0 auto}
+  .decision-ribbon{padding:5px 7px;gap:6px}
+  .decision-ribbon small{font-size:6px}.decision-ribbon b{font-size:11px}.decision-ribbon span{font-size:6.5px}
+  .inline-actions button{height:28px;font-size:8px;padding-inline:8px}
+  .table-pile{min-height:50px}.trick-stage{height:62px}
+  .coach-dock{right:108px;bottom:72px;width:205px;padding:8px 10px}
+  .coach-kicker{font-size:7px}.coach-copy>b{font-size:11px}.coach-copy p{display:none}.coach-meta{font-size:6px}
+  .coach-actions{margin-top:5px}.coach-hint,.coach-toggle{height:29px;font-size:7px}
+  .player-hand{--hand-step:28px;width:min(470px,60vw);justify-content:center}
+  .player-hand .card+.card{margin-left:calc(var(--hand-step) - 46px)}
+  .player-hand .card.special .card-corner strong{font-size:8px}
+}
+
+@media(max-height:400px) and (orientation:landscape){
+  .table-quote{display:none}
+  .seat-top .player-copy small{display:none}
+}

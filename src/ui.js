@@ -1,56 +1,90 @@
 import { TichuGame } from './game.js';
-import { SUITS, displayRank, classify } from './rules.js';
 import { MultiplayerClient } from './multiplayer.js';
+import { buildCoachModel } from './coach.js';
+import {
+  createUiState,setCoachEnabled,syncUiState,assignExchangeCard,unassignExchangeTarget,
+  exchangeMap,exchangeComplete,
+} from './ui-state.js';
+import { renderAll } from './ui-render.js';
+import { animateCardTravel,animatePlayToPile,flashSeat,targetElementForSeat } from './ui-interactions.js';
 
 const game=new TichuGame();
 const mp=new MultiplayerClient(game);
-const $=s=>document.querySelector(s);
-const $$=s=>[...document.querySelectorAll(s)];
-const suitMap=Object.fromEntries(SUITS.map(s=>[s.id,s]));
-let toastTimer=null;
+const uiState=createUiState();
+const $=selector=>document.querySelector(selector);
+let toastTimer=null,lastLogId=null;
 
-function esc(v){const d=document.createElement('div');d.textContent=String(v??'');return d.innerHTML}
-function rankText(r){return ({11:'J',12:'Q',13:'K',14:'A'})[r]||String(r)}
-function cardHTML(card,{back=false,selected=false,clickable=false}={}){
-  if(back||card?.hidden)return `<div class="card card-back"></div>`;
-  if(card.special){
-    const meta={mahjong:['1','麻','MAH JONG'],dog:['DOG','犬','HOUND'],phoenix:['PHX','鳳','PHOENIX'],dragon:['DRG','龍','DRAGON']}[card.special];
-    return `<div class="card special ${selected?'selected':''}" ${clickable?`data-card="${card.id}"`:''}><span class="rank">${meta[0]}</span><span class="suit">${meta[1]}</span><span class="mini">${meta[2]}</span></div>`;
-  }
-  const suit=suitMap[card.suit];
-  return `<div class="card ${card.suit} ${selected?'selected':''}" ${clickable?`data-card="${card.id}"`:''}><span class="rank">${displayRank(card)}</span><span class="suit">${suit.symbol}</span><span class="mini">${suit.name}</span></div>`;
-}
-function toast(text){const n=$('#toast');n.textContent=text;n.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>n.classList.add('hidden'),2800)}
-function playerStatus(s,seat){const decl=s.declarations[seat];const extras=[`${s.hands[seat].length} cards`];if(decl==='grand')extras.push('GRAND TICHU');if(decl==='tichu')extras.push('TICHU');if(s.finished.includes(seat))extras.push(`#${s.finished.indexOf(seat)+1} OUT`);return extras.join(' · ')}
-function renderSeat(s,seat){
-  const el=$(`.seat[data-seat="${seat}"]`);if(!el)return;el.classList.toggle('active',s.phase==='play'&&s.currentPlayer===seat);el.classList.toggle('finished',s.finished.includes(seat));
-  const badge=`<div class="player-badge"><span class="avatar">${seat===0?'你':['美','林','偉'][seat-1]}</span><span class="player-copy"><b>${esc(s.names[seat])}</b><small>${esc(playerStatus(s,seat))}</small></span></div>`;
-  if(seat===0)el.innerHTML=badge+`<div class="hand">${s.hands[0].map(c=>cardHTML(c,{selected:s.selected.has(c.id),clickable:s.phase==='play'})).join('')}</div>`;
-  else{const backs=Array.from({length:s.hands[seat].length},()=>cardHTML(null,{back:true})).join('');el.innerHTML=badge+(seat===2?`<div class="hand">${backs}</div>`:'')}
-}
-function renderTable(s){
-  const pile=$('#table-pile');if(!s.table.length)pile.innerHTML=`<div style="color:#ffffff42;font:italic 13px Georgia,serif">The table is clear</div>`;else{const e=s.table.at(-1);pile.innerHTML=`<div class="play-group">${e.cards.map(c=>cardHTML(c)).join('')}<span class="play-label">${esc(s.names[e.seat])} · ${esc(e.play.type)}</span></div>`}
-  const wish=$('#wish-chip');wish.classList.toggle('hidden',!s.wish);wish.textContent=s.wish?`MAH JONG WISH · ${rankText(s.wish)}`:'';
-  let status='';if(s.phase==='play')status=s.currentPlayer===0?'Your turn':`${s.names[s.currentPlayer]}'s turn`;else if(s.phase==='exchange')status='Exchange one card with each other player';else if(s.phase==='grand')status='Grand Tichu declaration';else if(s.phase==='round-end')status=`Round finished · ${s.roundScore[0]} : ${s.roundScore[1]}`;else if(s.phase==='match-end')status=`Team ${s.winnerTeam===0?'A':'B'} wins`;$('#turn-status').textContent=status;
-}
-function renderActions(s){const selected=s.hands[0].filter(c=>s.selected.has(c.id));const play=classify(selected,s.lastPlay?.type==='single'?s.lastPlay.value:null);$('#play-btn').disabled=!(s.phase==='play'&&play&&(s.currentPlayer===0||play.type==='bomb'));$('#pass-btn').disabled=!(s.phase==='play'&&s.currentPlayer===0&&s.lastPlay);$('#tichu-btn').disabled=!(s.hands[0].length===14&&!['grand','tichu'].includes(s.declarations[0]));$('#tichu-btn').classList.toggle('hidden',!['exchange','play'].includes(s.phase))}
-function renderLog(s){$('#game-log').innerHTML=s.log.map(x=>`<div class="log-item">${esc(x.text)}</div>`).join('')}
-function render(s=game.state){$('#score-a').textContent=s.scores[0];$('#score-b').textContent=s.scores[1];[0,1,2,3].forEach(seat=>renderSeat(s,seat));renderTable(s);renderActions(s);renderLog(s);if(s.phase==='grand'&&!document.querySelector('.modal-backdrop'))showGrand();if(s.phase==='exchange'&&!s.exchangeDone[0]&&!document.querySelector('.modal-backdrop'))showExchange();if(s.phase==='round-end'&&!document.querySelector('.modal-backdrop'))showRoundEnd();if(s.phase==='match-end'&&!document.querySelector('.modal-backdrop'))showMatchEnd();if(s.dragonRecipient==='needed'&&!document.querySelector('.modal-backdrop'))showDragonChoice()}
+function toast(text){const node=$('#toast');if(!node)return;node.textContent=text;node.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>node.classList.add('hidden'),2800)}
 function modal(html){$('#modal-root').innerHTML=`<div class="modal-backdrop"><section class="modal">${html}</section></div>`}
 function closeModal(){$('#modal-root').innerHTML=''}
-function showGrand(){modal(`<h2>Grand Tichu?</h2><p>You have seen your first 8 cards. Call Grand Tichu before receiving the final six: +200 if you go out first, −200 otherwise.</p><div class="choice-grid"><div class="choice-card"><h3>Call Grand Tichu</h3><p>High risk. Your team stakes 200 points.</p></div><div class="choice-card"><h3>Pass</h3><p>Receive the remaining six cards without the Grand bet.</p></div></div><div class="modal-actions"><button data-modal="grand-pass" class="secondary">Pass</button><button data-modal="grand-call" class="primary">Grand Tichu +200</button></div>`)}
-function showExchange(){const s=game.state,targets=[1,2,3];const options=s.hands[0].map(c=>`<option value="${c.id}">${esc(c.special||`${displayRank(c)} ${suitMap[c.suit].name}`)}</option>`).join('');modal(`<h2>Exchange cards</h2><p>Give exactly one face-down card to every other player. Your partner is ${esc(s.names[2])}, opposite you.</p><div class="exchange-grid">${targets.map(t=>`<label class="exchange-target"><b>To ${esc(s.names[t])}${t===2?' · partner':''}</b><select data-exchange="${t}"><option value="">Choose a card…</option>${options}</select></label>`).join('')}</div><div class="modal-actions"><button data-modal="exchange-submit" class="primary">Lock exchange</button></div>`)}
-function showRoundEnd(){const s=game.state;modal(`<h2>Round complete</h2><p>Team A scored <b>${s.roundScore[0]}</b> points, Team B <b>${s.roundScore[1]}</b>.</p><div class="scoreboard" style="justify-content:center;margin:24px 0"><div><small>TEAM A</small><strong>${s.scores[0]}</strong></div><span>:</span><div><small>TEAM B</small><strong>${s.scores[1]}</strong></div></div><div class="modal-actions"><button data-modal="next-round" class="primary">Next round</button></div>`)}
-function showMatchEnd(){const s=game.state;modal(`<h2>Team ${s.winnerTeam===0?'A':'B'} wins</h2><p>Final score ${s.scores[0]} : ${s.scores[1]}.</p><div class="modal-actions"><button data-modal="new-match" class="primary">New match</button></div>`)}
-function showDragonChoice(){const enemies=[1,3];modal(`<h2>Give away the Dragon trick</h2><p>The Dragon won the trick, so its entire pile must be given to one opponent. You still keep the lead.</p><div class="modal-actions">${enemies.map(x=>`<button data-modal="dragon-${x}" class="secondary">${esc(game.state.names[x])}</button>`).join('')}</div>`)}
-function showWish(){const opts=Array.from({length:13},(_,i)=>i+2).map(r=>`<button data-wish="${r}" class="secondary">${rankText(r)}</button>`).join('');modal(`<h2>Mah Jong wish</h2><p>Choose a normal rank. The first player able to include it in a legal play must do so.</p><div style="display:flex;gap:8px;flex-wrap:wrap">${opts}</div><div class="modal-actions"><button data-wish="none" class="ghost">No wish</button></div>`)}
-function showRules(){modal(`<h2>How to play Tichu</h2><div class="rule-columns"><h3>Goal</h3><p>Four players form two partnerships. Empty your hand and score card points; first team to at least 1000 wins.</p><h3>Combinations</h3><ul><li>single, pair, triple</li><li>full house</li><li>straight of 5+</li><li>consecutive pairs</li><li>bomb: four of a kind or straight flush 5+</li></ul><h3>Special cards</h3><p><b>Mah Jong</b> is rank 1 and may make a wish. <b>Dog</b> transfers the lead to your partner. <b>Phoenix</b> is a wildcard and −25 points. <b>Dragon</b> is the highest single, +25 points, but its won trick goes to an opponent.</p><h3>Points</h3><p>5 = 5 points, 10/K = 10, Dragon = 25, Phoenix = −25. A partnership going out first and second scores 200–0 before Tichu bets.</p><h3>Tichu</h3><p>Standard Tichu may be called while all 14 cards remain: ±100. Grand Tichu is called after seeing only 8 cards: ±200.</p></div><div class="modal-actions"><button data-modal="close" class="primary">Close</button></div>`)}
+
+function showRules(){
+  modal(`<h2>Tichu · szybkie zasady</h2>
+    <div class="rule-columns">
+      <h3>Cel</h3><p>Czterech graczy tworzy dwie drużyny. Twoim partnerem jest gracz naprzeciwko. Pozbądź się kart i zbieraj karty punktowe. Pierwsza drużyna z co najmniej 1000 punktów wygrywa.</p>
+      <h3>Jak działa lewa</h3><p>Gracz wychodzący zagrywa kombinację. Kolejni muszą zagrać ten sam typ kombinacji o wyższej wartości, bombę albo spasować. Gdy wszyscy pozostali spasują, ostatni gracz, który zagrał karty, bierze lewę i wychodzi ponownie.</p>
+      <h3>Kombinacje</h3><ul><li>pojedyncza karta, para, trójka</li><li>full house</li><li>strit z 5+ kart</li><li>kolejne pary</li><li>bomba: kareta albo poker z 5+ kart</li></ul>
+      <h3>Karty specjalne</h3><p><b>Mah Jong</b> ma wartość 1 i pozwala wypowiedzieć życzenie. <b>Pies</b> przekazuje wyjście partnerowi. <b>Feniks</b> działa jak elastyczny joker i jest wart −25 punktów. <b>Smok</b> to najwyższa pojedyncza karta i +25 punktów, ale wygraną nim lewę trzeba oddać rywalowi.</p>
+      <h3>Punkty</h3><p>5 = 5 pkt. 10 i K = 10 pkt. Smok = +25. Feniks = −25. Jeśli partnerzy wyjdą jako pierwsi i drudzy, zdobywają 200–0 za rundę.</p>
+      <h3>Tichu</h3><p><b>Tichu</b>: deklarujesz, zanim zagrasz pierwszą kartę i nadal masz pełne 14 kart; stawka ±100. <b>Grand Tichu</b>: decyzja po zobaczeniu pierwszych 8 kart; stawka ±200. Zakład wygrywasz tylko wtedy, gdy osobiście wyjdziesz pierwszy.</p>
+      <h3>Tryb początkującego</h3><p>Coach podświetla karty należące do legalnych ruchów, wyjaśnia bieżącą sytuację i może wskazać ruch. Nigdy nie widzi ukrytych kart przeciwników i nie gra za Ciebie.</p>
+    </div><div class="modal-actions"><button data-modal="close" class="primary">Zamknij</button></div>`);
+}
+
 function runAction(type,payload={},localFn=null){if(mp.active){mp.action(type,payload);return {ok:true}}return localFn?localFn():{ok:false}}
-function playHuman(){const s=game.state,cards=s.hands[0].filter(c=>s.selected.has(c.id));if(cards.some(c=>c.special==='mahjong')){showWish();return}const bomb=game.selectedPlay()?.type==='bomb'&&s.currentPlayer!==0;const r=runAction('play',{ids:[...s.selected],wishRank:null,bomb},()=>game.playSelected());if(r&&!r.ok)toast(r.error)}
-document.addEventListener('click',e=>{
-  const card=e.target.closest('[data-card]');if(card){game.select(card.dataset.card);return}
-  const action=e.target.closest('[data-action]')?.dataset.action;if(action==='play')playHuman();if(action==='pass'){if(mp.active)mp.action('pass');else if(!game.pass(0))toast(game.state.wish?'You must fulfill the wish if possible.':'Cannot pass.')}if(action==='call-tichu')runAction('tichu',{},()=>game.declareTichu(0));if(action==='new-match')runAction('new-match',{},()=>game.resetMatch());if(action==='open-log')$('#log-panel').classList.remove('hidden');if(action==='close-drawer')$('#log-panel').classList.add('hidden');if(action==='open-rules')showRules();if(action==='open-multiplayer')mp.openLobby();
-  const ma=e.target.closest('[data-modal]')?.dataset.modal;if(ma==='grand-call'||ma==='grand-pass'){closeModal();runAction('grand',{call:ma==='grand-call'},()=>game.declareGrand(0,ma==='grand-call'))}if(ma==='exchange-submit'){const sels=$$('[data-exchange]'),map={};let ok=true;for(const x of sels){if(!x.value)ok=false;map[x.dataset.exchange]=x.value}if(new Set(Object.values(map)).size!==3)ok=false;if(!ok){toast('Choose three different cards.');return}if(mp.active){closeModal();mp.action('exchange',{map})}else if(game.submitExchange(0,map))closeModal();else toast('Invalid exchange.')}if(ma==='next-round'){closeModal();runAction('next-round',{},()=>game.nextRound())}if(ma==='new-match'){closeModal();runAction('new-match',{},()=>game.resetMatch())}if(ma==='close')closeModal();if(ma?.startsWith('dragon-')){const seat=Number(ma.split('-')[1]);closeModal();runAction('dragon',{seat},()=>game.chooseDragonRecipient(seat))}
-  const wish=e.target.closest('[data-wish]')?.dataset.wish;if(wish){const rank=wish==='none'?null:Number(wish);closeModal();const ids=[...game.state.selected];const bomb=game.selectedPlay()?.type==='bomb'&&game.state.currentPlayer!==0;const r=runAction('play',{ids,wishRank:rank,bomb},()=>game.playSelected(rank));if(r&&!r.ok)toast(r.error)}
+function logFeedback(state){
+  const newest=state.log?.[0];if(!newest){lastLogId=null;return}
+  if(lastLogId&&newest.id!==lastLogId){
+    const pass=newest.text.match(/^(.+?) passes\.$/),tichu=newest.text.match(/^(.+?) calls Tichu!$/);
+    if(pass){const seat=state.names?.findIndex(name=>name===pass[1]);if(seat>=0)setTimeout(()=>flashSeat(seat,'PASS'),0)}
+    if(tichu){const seat=state.names?.findIndex(name=>name===tichu[1]);if(seat>=0)setTimeout(()=>flashSeat(seat,'TICHU!'),0)}
+  }
+  lastLogId=newest.id;
+}
+function render(state=game.state){syncUiState(uiState,state);renderAll(state,uiState,buildCoachModel(state,uiState));logFeedback(state)}
+function selectedCards(){const selected=game.state.selected instanceof Set?game.state.selected:new Set(game.state.selected||[]);return (game.state.hands?.[0]||[]).filter(card=>selected.has(card.id))}
+function animateSelectedToPile(){const selected=game.state.selected instanceof Set?[...game.state.selected]:[...(game.state.selected||[])];const source=selected.length?document.querySelector(`[data-card="${CSS.escape(selected[0])}"]`):null;if(source)animatePlayToPile(source,$('#table-pile'))}
+
+function playHuman(){
+  const state=game.state,cards=selectedCards();if(!cards.length)return;
+  if(cards.some(card=>card.special==='mahjong')){uiState.wishPicker=true;uiState.hintCardIds.clear();render();return}
+  animateSelectedToPile();const play=game.selectedPlay?.(),bomb=play?.type==='bomb'&&state.currentPlayer!==0;
+  const result=runAction('play',{ids:[...(state.selected instanceof Set?state.selected:new Set(state.selected||[]))],wishRank:null,bomb},()=>game.playSelected());uiState.hintCardIds.clear();if(result&&!result.ok)toast(result.error);
+}
+function submitWish(value){
+  const rank=value==='none'?null:Number(value);uiState.wishPicker=false;animateSelectedToPile();const state=game.state,selected=state.selected instanceof Set?[...state.selected]:[...(state.selected||[])];const play=game.selectedPlay?.(),bomb=play?.type==='bomb'&&state.currentPlayer!==0;
+  const result=runAction('play',{ids:selected,wishRank:rank,bomb},()=>game.playSelected(rank));uiState.hintCardIds.clear();if(result&&!result.ok)toast(result.error);
+}
+function handleExchangeCard(cardElement){
+  const state=game.state;if(state.phase!=='exchange'||state.exchangeDone?.[0])return;
+  const target=Number(uiState.exchangeTarget||1);animateCardTravel(cardElement,targetElementForSeat(target));assignExchangeCard(uiState,target,cardElement.dataset.card);
+  const next=[1,2,3].find(seat=>!uiState.exchangeAssignments[seat]);if(next)uiState.exchangeTarget=next;uiState.hintCardIds.clear();render();
+}
+function submitExchange(){
+  if(!exchangeComplete(uiState)){toast('Wybierz po jednej różnej karcie dla każdego z pozostałych graczy.');return}
+  const map=exchangeMap(uiState);if(mp.active){mp.action('exchange',{map});toast('Wymiana wysłana.');return}if(!game.submitExchange(0,map))toast('Nieprawidłowa wymiana.');
+}
+function coachHint(){const model=buildCoachModel(game.state,uiState);if(!model?.hintCardIds?.size){toast('W tej chwili nie ma ruchu do podpowiedzenia.');return}uiState.hintCardIds=new Set(model.hintCardIds);render()}
+function handleInline(action){
+  if(action==='grand-call'||action==='grand-pass'){runAction('grand',{call:action==='grand-call'},()=>game.declareGrand(0,action==='grand-call'));return}
+  if(action==='exchange-confirm'){submitExchange();return}if(action==='next-round'){runAction('next-round',{},()=>game.nextRound());return}if(action==='new-match')runAction('new-match',{},()=>game.resetMatch());
+}
+
+document.addEventListener('click',event=>{
+  const undo=event.target.closest('[data-exchange-undo]');if(undo){event.stopPropagation();const seat=Number(undo.dataset.exchangeUndo);unassignExchangeTarget(uiState,seat);uiState.exchangeTarget=seat;render();return}
+  const card=event.target.closest('[data-card]');if(card){if(game.state.phase==='exchange'){handleExchangeCard(card);return}if(game.state.phase==='play'){game.select(card.dataset.card);uiState.hintCardIds.clear();return}}
+  const exchangeTarget=event.target.closest('[data-exchange-target]');if(exchangeTarget&&game.state.phase==='exchange'){uiState.exchangeTarget=Number(exchangeTarget.dataset.exchangeTarget);uiState.hintCardIds.clear();render();return}
+  const dragonTarget=event.target.closest('[data-dragon-target]');if(dragonTarget){const seat=Number(dragonTarget.dataset.dragonTarget);runAction('dragon',{seat},()=>game.chooseDragonRecipient(seat));return}
+  const wish=event.target.closest('[data-wish]')?.dataset.wish;if(wish){submitWish(wish);return}
+  const inline=event.target.closest('[data-inline]')?.dataset.inline;if(inline){handleInline(inline);return}
+  const action=event.target.closest('[data-action]')?.dataset.action;
+  if(action==='play'){playHuman();return}
+  if(action==='pass'){uiState.hintCardIds.clear();if(mp.active)mp.action('pass');else if(!game.pass(0))toast(game.state.wish?'Musisz spełnić życzenie, jeśli możesz zrobić to legalnie.':'Nie możesz teraz spasować.');return}
+  if(action==='call-tichu'){runAction('tichu',{},()=>game.declareTichu(0));return}if(action==='new-match'){runAction('new-match',{},()=>game.resetMatch());return}
+  if(action==='open-log'){$('#log-panel').classList.remove('hidden');return}if(action==='close-drawer'){$('#log-panel').classList.add('hidden');return}
+  if(action==='open-rules'){showRules();return}if(action==='open-multiplayer'){mp.openLobby();return}
+  if(action==='coach-toggle'){setCoachEnabled(uiState,!uiState.coachEnabled);render();return}if(action==='coach-hint'){coachHint();return}
+  const modalAction=event.target.closest('[data-modal]')?.dataset.modal;if(modalAction==='close')closeModal();
 });
-game.addEventListener('change',e=>render(e.detail));window.tichu={game,mp};game.resetMatch();
+document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if(uiState.wishPicker){uiState.wishPicker=false;render();return}if(uiState.hintCardIds.size){uiState.hintCardIds.clear();render();return}$('#log-panel')?.classList.add('hidden')});
+game.addEventListener('change',event=>render(event.detail));window.tichu={game,mp,uiState};game.resetMatch();
