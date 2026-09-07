@@ -1,9 +1,12 @@
 /* Fidelity and responsive corrections after Playwright screenshot review. */
 
+/* Avoid CSS multiplication in calc(): simple subtraction is portable and keeps the fan deterministic. */
+.player-hand .card+.card,.opponent-hand-top .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
+
 @media(max-width:680px){
   :root{--hand-step:20px}
   .player-hand{width:min(312px,calc(100vw - 34px));justify-content:center;padding-left:0}
-  .player-hand .card+.card{margin-left:calc((var(--card-width) - var(--hand-step))*-1)}
+  .player-hand .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
   .decision-ribbon{display:grid;grid-template-columns:1fr;gap:7px}
   .decision-ribbon .inline-actions{width:100%;justify-content:flex-end}
   .decision-ribbon .inline-actions button{min-width:0;flex:1;padding-inline:7px;font-size:9px}
@@ -30,7 +33,7 @@
   .coach-kicker{font-size:7px}.coach-copy>b{font-size:11px}.coach-copy p{display:none}.coach-meta{font-size:6px}
   .coach-actions{margin-top:5px}.coach-hint,.coach-toggle{height:29px;font-size:7px}
   .player-hand{width:min(470px,60vw);justify-content:center}
-  .player-hand .card+.card{margin-left:calc((46px - var(--hand-step))*-1)}
+  .player-hand .card+.card{margin-left:calc(var(--hand-step) - 46px)}
 }
 
 @media(max-height:400px) and (orientation:landscape){
