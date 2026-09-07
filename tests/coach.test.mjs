@@ -57,7 +57,8 @@ test('Coach explains that an active wish must be fulfilled when possible',()=>{
     wish:8,
   });
   const model=buildCoachModel(s,{...baseUi});
-  assert.match(model.body,/must.*8|wish.*8/i);
+  assert.match(model.body,/8/i);
+  assert.match(model.body,/must.*wish|wish.*must/i);
   assert.deepEqual([...model.legalCardIds].sort(),['jade-8','sword-8']);
 });
 
