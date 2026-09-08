@@ -25,6 +25,10 @@ test('Blender materials decode and exchange remains interactive', async ({ page 
   expect(materials.every(image => image.width >= 768 && image.height >= 768)).toBe(true);
   await page.locator('[data-inline="grand-pass"]').click();
   await expect(page.locator('.seat-bottom [data-card]')).toHaveCount(14);
+  await page.evaluate(() => {
+    clearTimeout(window.tichu.game.botTimer);
+    window.tichu.game.botDelay = 0;
+  });
   await expect(page.locator('[data-inline="exchange-confirm"]')).toBeDisabled();
   for (let i = 0; i < 3; i++) {
     // Let the previous card's hover lift settle before approaching its neighbour.
