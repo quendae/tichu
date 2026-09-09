@@ -25,45 +25,97 @@ function optionCardIds(options){const ids=new Set();for(const option of options)
 
 function selectedModel(state){
   const selectedIds=state.selected instanceof Set?state.selected:new Set(state.selected||[]);
-  if(!selectedIds.size)return {selectedLabel:'',selectedValid:null};
+  if(!selectedIds.size)return {selectedLabel:'',selectedValid:null,selectedReason:''};
   const cards=(state.hands?.[0]||[]).filter(card=>selectedIds.has(card.id));
   const play=classify(cards,state.lastPlay?.type==='single'?state.lastPlay.value:null);
   let valid=!!play&&beats(play,state.lastPlay||null);
+  let selectedReason='';
+  if(!play)selectedReason='Zaznaczone karty nie tworzą jednego z układów dozwolonych w Tichu.';
+  else if(!valid){
+    const requiredType=state.lastPlay?.type;
+    selectedReason=requiredType&&play.type!==requiredType&&play.type!=='bomb'
+      ?`To ${typeNames[play.type]}, a stół wymaga układu typu ${typeNames[requiredType]} albo bomby.`
+      :'Układ ma właściwy typ, ale jest za słaby, by przebić ostatnie zagranie.';
+  }
   if(valid&&state.wish){
     const options=possibleSelections(state.hands?.[0]||[],state.lastPlay||null,state.wish),mustFulfill=options.some(option=>option.fulfills);
-    if(mustFulfill&&!cards.some(card=>!card.special&&card.rank===state.wish))valid=false;
+    if(mustFulfill&&!cards.some(card=>!card.special&&card.rank===state.wish)){
+      valid=false;selectedReason=`Masz legalny ruch z kartą ${rankText(state.wish)}, więc aktywne życzenie wymaga jej zagrania.`;
+    }
   }
-  return {selectedLabel:play?describePlayPl(play):'Te karty nie tworzą legalnej kombinacji',selectedValid:valid};
+  if(valid)selectedReason=state.lastPlay?'Ten układ ma właściwy typ i przebija ostatnie zagranie.':'Ten układ jest legalnym otwarciem lewy.';
+  return {selectedLabel:play?describePlayPl(play):'Nielegalna kombinacja',selectedValid:valid,selectedReason};
 }
 function hintOption(options){return options.find(option=>option.play.type!=='bomb')||options[0]||null}
 
 function playPrompt(state){
-  if(state.currentPlayer!==0)return {title:`${state.names?.[state.currentPlayer]||'Rywal'} myśli`,body:'Obserwuj stół. Gdy przyjdzie Twoja kolej, Coach od razu pokaże legalne możliwości.'};
-  if(state.wish)return {title:`Życzenie Mah Jonga: ${rankText(state.wish)}`,body:`Jeśli możesz legalnie zagrać z kartą ${rankText(state.wish)}, musisz spełnić życzenie. Jeśli nie możesz — grasz normalnie albo pasujesz.`};
-  if(!state.lastPlay)return {title:'Rozpoczynasz lewę',body:'Możesz wyjść dowolną legalną kartą lub kombinacją. Bomba też jest legalna, ale zwykle warto ją zachować.'};
+  if(state.currentPlayer!==0)return {
+    goal:'Przygotuj odpowiedź na następną decyzję.',
+    action:`Obserwuj typ i siłę zagrania gracza ${state.names?.[state.currentPlayer]||'rywala'}.`,
+    reason:'Gdy przyjdzie Twoja kolej, musisz zagrać ten sam typ wyżej, użyć bomby albo spasować.',
+  };
+  if(state.wish)return {
+    goal:`Spełnij życzenie Mah Jonga: ${rankText(state.wish)}.`,
+    action:`Jeśli masz legalny ruch z kartą ${rankText(state.wish)}, musisz ją zagrać; inaczej wybierz zwykły legalny ruch lub spasuj.`,
+    reason:'Życzenie obowiązuje pierwszego gracza, który może legalnie użyć wskazanej rangi.',
+  };
+  if(!state.lastPlay)return {
+    goal:'Nadaj lewie korzystny typ i tempo.',
+    action:'Wybierz pojedynczą kartę lub legalną kombinację i zagraj.',
+    reason:'Pierwsze zagranie ustala typ oraz liczbę kart, które inni muszą przebić, i pozwala Ci wpływać na przebieg lewy.',
+  };
   const type=state.lastPlay.type;
-  if(type==='single')return {title:'Twój ruch',body:'Zagraj wyższą pojedynczą kartę, bombę albo spasuj. Smok jest najwyższą pojedynczą kartą, a Feniks ma specjalną wartość połówkową.'};
-  if(type==='pair')return {title:'Twój ruch',body:'Zagraj wyższą parę, bombę albo spasuj.'};
-  if(type==='triple')return {title:'Twój ruch',body:'Zagraj wyższą trójkę, bombę albo spasuj.'};
-  if(type==='full-house')return {title:'Twój ruch',body:'Zagraj wyższy full house, bombę albo spasuj. O sile full house decyduje wartość trójki.'};
-  if(type==='steps')return {title:'Twój ruch',body:`Zagraj wyższe kolejne pary z dokładnie ${state.lastPlay.length} kart, bombę albo spasuj.`};
-  if(type==='straight')return {title:'Twój ruch',body:`Zagraj wyższy strit z dokładnie ${state.lastPlay.length} kart, bombę albo spasuj.`};
-  if(type==='bomb')return {title:'Na stole leży bomba',body:'Możesz ją przebić tylko silniejszą bombą. W przeciwnym razie spasuj.'};
-  return {title:'Twój ruch',body:'Wybierz legalne zagranie przebijające stół albo spasuj.'};
+  const shared={goal:'Przejmij lewę albo zachowaj karty na później.',reason:'Wyższe zagranie daje Ci szansę przejąć prowadzenie w lewie; pas zachowuje karty, ale oddaje kontrolę.'};
+  if(type==='single')return {...shared,action:'Zagraj wyższą pojedynczą kartę, bombę albo spasuj. Smok jest najwyższą pojedynczą kartą, a Feniks ma wartość połówkową.'};
+  if(type==='pair')return {...shared,action:'Zagraj wyższą parę, bombę albo spasuj.'};
+  if(type==='triple')return {...shared,action:'Zagraj wyższą trójkę, bombę albo spasuj.'};
+  if(type==='full-house')return {...shared,action:'Zagraj wyższy full house, bombę albo spasuj. O sile full house decyduje wartość trójki.'};
+  if(type==='steps')return {...shared,action:`Zagraj wyższe kolejne pary z dokładnie ${state.lastPlay.length} kart, bombę albo spasuj.`};
+  if(type==='straight')return {...shared,action:`Zagraj wyższy strit z dokładnie ${state.lastPlay.length} kart, bombę albo spasuj.`};
+  if(type==='bomb')return {goal:'Odpowiedz na najsilniejszy typ zagrania.',action:'Zagraj silniejszą bombę albo spasuj.',reason:'Zwykła kombinacja nie przebije bomby; zachowaj ją na moment, w którym warto przejąć lewę.'};
+  return {...shared,action:'Wybierz legalne zagranie przebijające stół albo spasuj.'};
 }
+
+const emptyCoachExtras=()=>({legalCardIds:new Set(),optionCount:0,selectedLabel:'',selectedValid:null,selectedReason:'',hintCardIds:new Set()});
 
 export function buildCoachModel(state,uiState){
   if(!uiState?.coachEnabled)return null;
-  if(state.phase==='grand')return {title:'Decyzja Grand Tichu',body:'Widzisz dopiero pierwsze 8 kart. Grand Tichu daje +200, jeśli wyjdziesz pierwszy, i −200, jeśli Ci się nie uda.',legalCardIds:new Set(),optionCount:0,selectedLabel:'',selectedValid:null,hintCardIds:new Set()};
+  if(state.phase==='grand')return {
+    goal:'Oceń, czy warto zagrać o pierwsze miejsce.',
+    action:'Spójrz na pierwsze 8 kart i wybierz Grand Tichu albo Pas.',
+    reason:'Grand Tichu daje +200 punktów za wyjście jako pierwszy i −200 za porażkę; decyzję podejmujesz przed dobraniem reszty kart.',
+    ...emptyCoachExtras(),
+  };
   if(state.phase==='exchange'){
+    if(state.exchangeDone?.[0])return {
+      goal:'Doprowadź wymianę do końca i rozpocznij rozgrywkę.',
+      action:'Poczekaj, aż pozostali gracze zatwierdzą swoje karty.',
+      reason:'Karty zostaną przekazane dopiero, gdy każdy gracz wybierze trzy różne karty.',
+      ...emptyCoachExtras(),
+    };
     const target=Number(uiState.exchangeTarget||1),name=state.names?.[target]||`Gracz ${target+1}`;
-    const relation=target===2?'Twojego partnera siedzącego naprzeciwko':target===1?'rywala po lewej':'rywala po prawej';
-    return {title:`Przekaż kartę do ${name}`,body:`Wybierz jedną kartę bezpośrednio z ręki dla ${relation}. Przed zatwierdzeniem wymiany możesz zmienić każdy wybór.`,legalCardIds:new Set((state.hands?.[0]||[]).map(card=>card.id)),optionCount:(state.hands?.[0]||[]).length,selectedLabel:'',selectedValid:null,hintCardIds:new Set()};
+    const partner=target===2;
+    return {
+      goal:'Zaplanuj wymianę kart przed pierwszą lewą.',
+      action:`Wybierz z ręki jedną kartę dla gracza ${name}. Przed zatwierdzeniem możesz zmienić wybór.`,
+      reason:partner?'To Twój partner: oboje zdobywacie punkty dla jednej drużyny, więc możesz wzmocnić jego rękę.':'To rywal, więc zwykle warto oddać kartę mało przydatną dla Twojego planu.',
+      legalCardIds:new Set((state.hands?.[0]||[]).map(card=>card.id)),optionCount:(state.hands?.[0]||[]).length,selectedLabel:'',selectedValid:null,selectedReason:'',hintCardIds:new Set(),
+    };
   }
-  if(state.phase!=='play')return {title:state.phase==='round-end'?'Koniec rundy':'Coach Tichu',body:state.phase==='round-end'?'Sprawdź wynik i rozpocznij następną rundę, gdy będziesz gotowy.':'Coach wyjaśni następną decyzję, gdy gra ruszy dalej.',legalCardIds:new Set(),optionCount:0,selectedLabel:'',selectedValid:null,hintCardIds:new Set()};
+  if(state.phase!=='play')return state.phase==='round-end'?{
+    goal:'Zrozum, skąd wziął się wynik rundy.',
+    action:'Sprawdź punkty drużyn i rozpocznij następną rundę.',
+    reason:'Punkty z lew oraz premie lub kary Tichu składają się na wynik całego meczu.',
+    ...emptyCoachExtras(),
+  }:{
+    goal:'Przejdź do następnej decyzji.',
+    action:'Poczekaj, aż gra zakończy bieżący krok.',
+    reason:'Coach pokaże nowe działanie, gdy zmieni się faza lub aktywny gracz.',
+    ...emptyCoachExtras(),
+  };
 
   const options=state.currentPlayer===0?legalOptions(state):[],prompt=playPrompt(state),selected=selectedModel(state),hint=hintOption(options);
-  return {...prompt,legalCardIds:optionCardIds(options),optionCount:options.length,selectedLabel:selected.selectedLabel,selectedValid:selected.selectedValid,hintCardIds:new Set(hint?.cards?.map(card=>card.id)||[])};
+  return {...prompt,legalCardIds:optionCardIds(options),optionCount:options.length,...selected,hintCardIds:new Set(hint?.cards?.map(card=>card.id)||[])};
 }
 
 export function specialCardHelp(card){
