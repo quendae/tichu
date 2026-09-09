@@ -4,7 +4,7 @@ export function animateCardTravel(source,target,className='card-travel'){
   const from=source.getBoundingClientRect(),to=target.getBoundingClientRect();
   const clone=source.cloneNode(true);
   clone.removeAttribute?.('data-card');
-  clone.classList.add(className);
+  clone.classList.add(...className.split(/\s+/).filter(Boolean));
   Object.assign(clone.style,{
     position:'fixed',left:`${from.left}px`,top:`${from.top}px`,width:`${from.width}px`,height:`${from.height}px`,
     margin:'0',zIndex:'300',pointerEvents:'none',transformOrigin:'center center',

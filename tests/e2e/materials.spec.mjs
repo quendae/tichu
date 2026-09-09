@@ -58,3 +58,38 @@ test('missing decorative assets preserve cards and keyboard actions', async ({ p
   await expect(page.locator('.seat-bottom [data-card]')).toHaveCount(14);
   await expect(page.locator('[data-inline="exchange-confirm"]')).toBeVisible();
 });
+
+test('selected legal card is played when animations are enabled', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/');
+  await page.evaluate(() => {
+    const game = window.tichu.game;
+    clearTimeout(game.botTimer);
+    const low = { id: 'test-pagoda-2', suit: 'pagoda', rank: 2, special: null };
+    const high = { id: 'test-jade-4', suit: 'jade', rank: 4, special: null };
+    game.state.phase = 'play';
+    game.state.currentPlayer = 0;
+    game.state.hands[0] = [high];
+    game.state.table = [{ seat: 3, cards: [low], play: { type: 'single', length: 1, value: 2, cards: [low] } }];
+    game.state.lastPlay = game.state.table[0].play;
+    game.state.selected = new Set();
+    game.emit();
+  });
+
+  await page.locator('[data-card="test-jade-4"]').click();
+  await expect(page.locator('#play-btn')).toBeEnabled();
+  const controlGeometry = await page.evaluate(() => {
+    if (innerHeight > 520) return { overlap: false };
+    const play = document.querySelector('#play-btn').getBoundingClientRect();
+    const coach = document.querySelector('#coach-panel').getBoundingClientRect();
+    const overlap = !(play.right <= coach.left || play.left >= coach.right || play.bottom <= coach.top || play.top >= coach.bottom);
+    const coachStyle = getComputedStyle(document.querySelector('#coach-panel'));
+    return { overlap, innerWidth, play: { left: play.left, right: play.right, top: play.top, bottom: play.bottom }, coach: { left: coach.left, right: coach.right, top: coach.top, bottom: coach.bottom, width: coachStyle.width, right: coachStyle.right, topValue: coachStyle.top, bottomValue: coachStyle.bottom } };
+  });
+  expect(controlGeometry).toEqual(expect.objectContaining({ overlap: false }));
+  await page.locator('#play-btn').click();
+
+  await expect.poll(() => page.evaluate(() => window.tichu.game.state.hands[0].length)).toBe(0);
+  expect(errors).toEqual([]);
+});
