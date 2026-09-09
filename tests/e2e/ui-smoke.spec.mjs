@@ -10,6 +10,9 @@ for(const route of ['/']){
     await expect(page.locator('.table-menu')).toBeVisible();
     await expect(page.locator('.seat-bottom .card')).toHaveCount(8);
     await expect(page.locator('#coach-menu-state')).toHaveText('ON');
+    await expect(page.locator('[data-coach-section="goal"]')).toContainText('Cel');
+    await expect(page.locator('[data-coach-section="action"]')).toContainText('Teraz');
+    await expect(page.locator('[data-coach-section="reason"]')).toContainText('Dlaczego');
 
     const viewport=await page.evaluate(()=>({width:innerWidth,height:innerHeight}));
     const grand=page.locator('[data-inline="grand-call"]');

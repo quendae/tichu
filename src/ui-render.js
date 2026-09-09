@@ -175,9 +175,9 @@ function renderCoach(coachModel,uiState){
     host.className='coach-dock coach-off';host.innerHTML='<button type="button" data-action="coach-toggle" class="coach-off-button">🎓 Włącz tryb początkującego</button>';return;
   }
   host.className='coach-dock';
-  const verdict=coachModel.selectedLabel?`<span class="coach-verdict ${coachModel.selectedValid?'valid':'invalid'}">${coachModel.selectedValid?'✓':'×'} ${esc(coachModel.selectedLabel)}</span>`:'';
+  const verdict=coachModel.selectedLabel?`<div class="coach-selection ${coachModel.selectedValid?'valid':'invalid'}"><b>${coachModel.selectedValid?'✓':'×'} ${esc(coachModel.selectedLabel)}</b>${coachModel.selectedReason?`<span>${esc(coachModel.selectedReason)}</span>`:''}</div>`:'';
   const options=coachModel.optionCount?`${coachModel.optionCount} ${coachModel.optionCount===1?'możliwy ruch':'możliwe ruchy'}`:'';
-  host.innerHTML=`<div class="coach-copy"><span class="coach-kicker">💡 TWÓJ RUCH</span><b>${esc(coachModel.title)}</b><p>${esc(coachModel.body)}</p><div class="coach-meta">${verdict}${options?`<span>${esc(options)}</span>`:''}</div></div><div class="coach-actions"><button type="button" data-action="coach-hint" class="coach-hint" ${coachModel.hintCardIds?.size?'':'disabled'}>Podpowiedz ruch</button><button type="button" data-action="coach-toggle" class="coach-toggle">Coach ON</button></div>`;
+  host.innerHTML=`<div class="coach-copy"><span class="coach-kicker">🎓 COACH TICHU</span><div class="coach-guide"><div data-coach-section="goal"><small>Cel</small><b>${esc(coachModel.goal)}</b></div><div data-coach-section="action"><small>Teraz</small><span>${esc(coachModel.action)}</span></div><div data-coach-section="reason"><small>Dlaczego</small><span>${esc(coachModel.reason)}</span></div></div>${verdict}<div class="coach-meta">${options?`<span>${esc(options)}</span>`:''}</div></div><div class="coach-actions"><button type="button" data-action="coach-hint" class="coach-hint" ${coachModel.hintCardIds?.size?'':'disabled'}>Podpowiedz ruch</button><button type="button" data-action="coach-toggle" class="coach-toggle">Coach ON</button></div>`;
 }
 
 function renderScores(state){
