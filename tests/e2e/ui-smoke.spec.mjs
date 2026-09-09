@@ -18,6 +18,11 @@ for(const route of ['/']){
     expect(grandBox).not.toBeNull();
     expect(grandBox.x).toBeGreaterThanOrEqual(-1);expect(grandBox.x+grandBox.width).toBeLessThanOrEqual(viewport.width+1);
     expect(grandBox.y).toBeGreaterThanOrEqual(-1);expect(grandBox.y+grandBox.height).toBeLessThanOrEqual(viewport.height+1);
+    if(viewport.height<=520){
+      const coachBox=await page.locator('#coach-panel').boundingBox();
+      const overlap=!(grandBox.x+grandBox.width<=coachBox.x||grandBox.x>=coachBox.x+coachBox.width||grandBox.y+grandBox.height<=coachBox.y||grandBox.y>=coachBox.y+coachBox.height);
+      expect(overlap).toBe(false);
+    }
 
     const overflow=await page.evaluate(()=>({body:document.body.scrollWidth-innerWidth,html:document.documentElement.scrollWidth-innerWidth}));
     expect(overflow.body).toBeLessThanOrEqual(1);expect(overflow.html).toBeLessThanOrEqual(1);
@@ -63,3 +68,19 @@ for(const route of ['/']){
     expect(errors).toEqual([]);
   });
 }
+
+test('wide table and card indices remain large and separated', async ({ page }) => {
+  await page.setViewportSize({ width: 2542, height: 1283 });
+  await page.goto('/');
+  const geometry = await page.evaluate(() => {
+    const table = document.querySelector('.table').getBoundingClientRect();
+    const card = document.querySelector('.seat-bottom .card').getBoundingClientRect();
+    const corner = document.querySelector('.seat-bottom .card-corner').getBoundingClientRect();
+    const art = document.querySelector('.seat-bottom .art-layer').getBoundingClientRect();
+    const intersects = !(corner.right <= art.left || corner.left >= art.right || corner.bottom <= art.top || corner.top >= art.bottom);
+    return { tableWidth: table.width, viewportWidth: innerWidth, cardWidth: card.width, intersects };
+  });
+  expect(geometry.tableWidth / geometry.viewportWidth).toBeGreaterThanOrEqual(.82);
+  expect(geometry.cardWidth).toBeGreaterThanOrEqual(88);
+  expect(geometry.intersects).toBe(false);
+});
