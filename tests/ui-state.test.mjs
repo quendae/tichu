@@ -22,6 +22,10 @@ function memoryStorage(initial={}){
 test('ui state defaults to Coach enabled and empty exchange staging',()=>{
   const ui=createUiState(memoryStorage());
   assert.equal(ui.coachEnabled,true);
+  assert.equal(ui.menuOpen,false);
+  assert.equal(ui.devUiOpen,false);
+  assert.equal(ui.desktopLayout.localCardWidth,104);
+  assert.equal(ui.coachPosition,null);
   assert.deepEqual(ui.exchangeAssignments,{});
   assert.equal(ui.exchangeTarget,1);
   assert.equal(exchangeComplete(ui),false);

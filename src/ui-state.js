@@ -1,9 +1,15 @@
+import {loadCoachPosition,loadDesktopLayout} from './ui-layout.js';
+
 const COACH_KEY='tichu.qqnd.coach.v1';
 
 export function createUiState(storage=globalThis.localStorage){
   const stored=storage?.getItem?.(COACH_KEY);
   return {
     coachEnabled: stored===null ? true : stored!=='off',
+    menuOpen:false,
+    devUiOpen:false,
+    desktopLayout:loadDesktopLayout(storage),
+    coachPosition:loadCoachPosition(storage),
     hintCardIds:new Set(),
     exchangeAssignments:{},
     exchangeTarget:1,
