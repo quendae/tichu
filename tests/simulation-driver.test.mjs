@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runDeterministicMatch,runSimulationBatch,replayDeterministicMatch } from '../src/simulation/driver.js';
+import { parseSimulationArgs } from '../scripts/simulate.mjs';
 
 const failureMessage=result=>JSON.stringify(result?.replay?.failure||result,null,2);
 
@@ -29,4 +30,11 @@ test('batch runner completes ten deterministic matches',()=>{
   assert.equal(result.ok,true,failureMessage(result?.result||result));
   assert.equal(result.matches,10);
   assert.ok(result.steps>0);
+});
+
+test('simulation CLI parses deterministic batch options',()=>{
+  assert.deepEqual(
+    parseSimulationArgs(['--matches','250','--seed','500','--out','tmp/replays','--quiet']),
+    {matches:250,baseSeed:500,stepLimit:10000,outDir:'tmp/replays',quiet:true},
+  );
 });
