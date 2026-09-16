@@ -2,6 +2,7 @@ import { SUITS, displayRank, classify, beats, canFulfillWishFromSelection, descr
 import { cardArt } from './card-art.js';
 import { specialCardHelp } from './coach.js';
 import { exchangeComplete } from './ui-state.js';
+import { DEV_UI_CONTROLS } from './ui-layout.js';
 
 const $=selector=>document.querySelector(selector);
 const suitMap=Object.fromEntries(SUITS.map(suit=>[suit.id,suit]));
@@ -16,11 +17,12 @@ export function esc(value){
 export function rankText(rank){return ({11:'J',12:'Q',13:'K',14:'A'})[rank]||String(rank)}
 function selectedSet(state){return state.selected instanceof Set?state.selected:new Set(state.selected||[])}
 
-export function cardHTML(card,{back=false,selected=false,clickable=false,legal=false,hinted=false,assigned=false,small=false}={}){
-  if(back||card?.hidden)return `<div class="card card-back ${small?'card-small':''}" aria-hidden="true"><span class="back-glyph">天</span></div>`;
+export function cardHTML(card,{back=false,selected=false,clickable=false,legal=false,hinted=false,assigned=false}={}){
+  if(back||card?.hidden)return `<div class="card card-back" aria-hidden="true"><span class="back-glyph">天</span></div>`;
   const art=cardArt(card),suit=card.special?null:suitMap[card.suit],help=card.special?specialCardHelp(card):null;
-  const classes=['card',card.special?'special':card.suit,selected?'selected':'',legal?'legal-option':'',hinted?'hinted':'',assigned?'assigned':'',small?'card-small':''].filter(Boolean).join(' ');
-  const attrs=clickable?`type="button" data-card="${esc(card.id)}"`:'aria-hidden="true"',tag=clickable?'button':'div';
+  const classes=['card',card.special?'special':card.suit,selected?'selected':'',legal?'legal-option':'',hinted?'hinted':'',assigned?'assigned':''].filter(Boolean).join(' ');
+  const identity=card?.id?` data-card-id="${esc(card.id)}"`:'';
+  const attrs=clickable?`type="button" data-card="${esc(card.id)}"${identity}`:`aria-hidden="true"${identity}`,tag=clickable?'button':'div';
   const glyph=card.special?({mahjong:'麻',dog:'犬',phoenix:'鳳',dragon:'龍'}[card.special]||''):suit?.symbol||'';
   return `<${tag} ${attrs} class="${classes}" aria-label="${esc(art.ariaLabel)}" title="${esc(help?.body||art.ariaLabel)}" style="--card-accent:${art.accent}">
     <span class="card-corner"><strong>${esc(displayRank(card))}</strong><span>${esc(glyph)}</span></span>
@@ -71,24 +73,26 @@ export function renderSeat(state,uiState,coachModel,seat){
   if(seat===0){
     const selected=selectedSet(state),assignedIds=new Set(Object.values(uiState.exchangeAssignments||{}));
     const cards=hand.map(card=>cardHTML(card,{selected:selected.has(card.id),clickable:state.phase==='play'||(state.phase==='exchange'&&!state.exchangeDone?.[0]),legal:!!coachModel?.legalCardIds?.has(card.id),hinted:uiState.hintCardIds?.has(card.id),assigned:assignedIds.has(card.id)})).join('');
-    el.innerHTML=`${badge}<div class="hand player-hand" style="--card-count:${hand.length}">${cards}</div>`;
+    el.innerHTML=`${badge}<div class="hand player-hand" data-card-zone="local" style="--card-count:${hand.length}">${cards}</div>`;
   }else{
     const backs=Array.from({length:hand.length},()=>cardHTML(null,{back:true})).join('');
-    el.innerHTML=`${badge}${exchangeSeatChip(state,uiState,seat)}<div class="hand ${seat===2?'opponent-hand-top':'opponent-hand-side'}" style="--card-count:${hand.length}">${backs}</div>`;
+    el.innerHTML=`${badge}${exchangeSeatChip(state,uiState,seat)}<div class="hand ${seat===2?'opponent-hand-top':'opponent-hand-side'}" data-card-zone="opponent" style="--card-count:${hand.length}">${backs}</div>`;
   }
 }
 
 function playGroupHTML(state,entry,index,total){
   const latest=index===total-1;
-  return `<div class="trick-play seat-origin-${entry.seat} ${latest?'latest':''}" style="--play-index:${index}">
-    <div class="played-cards">${(entry.cards||[]).map(card=>cardHTML(card,{small:true})).join('')}</div>
-    <span class="play-label">${esc(state.names?.[entry.seat]||'Gracz')} · ${esc(describePlay(entry.play))}</span>
+  const cards=entry.cards||[];
+  return `<div class="trick-play seat-origin-${entry.seat} ${latest?'latest':''}" style="--play-index:${index};--played-count:${cards.length}">
+    <div class="played-cards" data-card-zone="table">${cards.map(card=>cardHTML(card)).join('')}</div>
+    <div class="play-caption">${esc(state.names?.[entry.seat]||'Gracz')} · ${esc(describePlay(entry.play))}</div>
   </div>`;
 }
 function renderPile(state){
   const pile=$('#table-pile');if(!pile)return;
   if(!state.table?.length){pile.innerHTML='<div class="table-empty">Stół jest pusty</div>';return;}
-  pile.innerHTML=`<div class="trick-stage">${state.table.map((entry,index)=>playGroupHTML(state,entry,index,state.table.length)).join('')}</div>`;
+  const visibleEntries=state.table.slice(-2);
+  pile.innerHTML=`<div class="trick-stage" style="--visible-play-count:${visibleEntries.length}">${visibleEntries.map((entry,index)=>playGroupHTML(state,entry,index,visibleEntries.length)).join('')}</div>`;
 }
 function renderWishChip(state){const chip=$('#wish-chip');if(!chip)return;chip.classList.toggle('hidden',!state.wish);chip.textContent=state.wish?`ŻYCZENIE MAH JONG · ${rankText(state.wish)}`:''}
 
@@ -106,11 +110,15 @@ function exchangeAssignmentsHTML(state,uiState){
 function renderContext(state,uiState){
   const host=$('#context-panel');if(!host)return;host.className='context-panel';
   if(state.phase==='grand'){
+    const renderKey=`grand:${state.declarations?.[0]?'waiting':'decision'}`;
+    if(host.dataset.renderKey===renderKey)return;
+    host.dataset.renderKey=renderKey;
     host.innerHTML=state.declarations?.[0]
       ?'<div class="inline-note">Decyzja Grand Tichu zapisana. Czekamy na pozostałych…</div>'
       :`<div class="decision-ribbon grand-ribbon"><div><small>PIERWSZE 8 KART</small><b>Grand Tichu?</b><span>Wyjdziesz pierwszy: +200 · inaczej: −200</span></div><div class="inline-actions"><button type="button" data-inline="grand-pass" class="secondary">Pas</button><button type="button" data-inline="grand-call" class="primary">Grand Tichu +200</button></div></div>`;
     return;
   }
+  delete host.dataset.renderKey;
   if(state.phase==='exchange'){
     if(state.exchangeDone?.[0])host.innerHTML='<div class="inline-note"><b>Wymiana zatwierdzona ✓</b><span>Czekamy na pozostałych graczy.</span></div>';
     else{
@@ -177,7 +185,25 @@ function renderCoach(coachModel,uiState){
   host.className='coach-dock';
   const verdict=coachModel.selectedLabel?`<div class="coach-selection ${coachModel.selectedValid?'valid':'invalid'}"><b>${coachModel.selectedValid?'✓':'×'} ${esc(coachModel.selectedLabel)}</b>${coachModel.selectedReason?`<span>${esc(coachModel.selectedReason)}</span>`:''}</div>`:'';
   const options=coachModel.optionCount?`${coachModel.optionCount} ${coachModel.optionCount===1?'możliwy ruch':'możliwe ruchy'}`:'';
-  host.innerHTML=`<div class="coach-copy"><span class="coach-kicker">🎓 COACH TICHU</span><div class="coach-guide"><div data-coach-section="goal"><small>Cel</small><b>${esc(coachModel.goal)}</b></div><div data-coach-section="action"><small>Teraz</small><span>${esc(coachModel.action)}</span></div><div data-coach-section="reason"><small>Dlaczego</small><span>${esc(coachModel.reason)}</span></div></div>${verdict}<div class="coach-meta">${options?`<span>${esc(options)}</span>`:''}</div></div><div class="coach-actions"><button type="button" data-action="coach-hint" class="coach-hint" ${coachModel.hintCardIds?.size?'':'disabled'}>Podpowiedz ruch</button><button type="button" data-action="coach-toggle" class="coach-toggle">Coach ON</button></div>`;
+  host.innerHTML=`<div class="coach-window-head"><button class="coach-drag-handle" type="button" aria-label="Przenieś Coacha">🎓 COACH TICHU</button><button data-action="reset-coach-position" type="button" class="coach-position-reset" aria-label="Przywróć pozycję Coacha">↺</button></div><div class="coach-copy"><div class="coach-guide"><div data-coach-section="goal"><small>Cel</small><b>${esc(coachModel.goal)}</b></div><div data-coach-section="action"><small>Teraz</small><span>${esc(coachModel.action)}</span></div><div data-coach-section="reason"><small>Dlaczego</small><span>${esc(coachModel.reason)}</span></div></div>${verdict}<div class="coach-meta">${options?`<span>${esc(options)}</span>`:''}</div></div><div class="coach-actions"><button type="button" data-action="coach-hint" class="coach-hint" ${coachModel.hintCardIds?.size?'':'disabled'}>Podpowiedz ruch</button><button type="button" data-action="coach-toggle" class="coach-toggle">Coach ON</button></div>`;
+}
+
+export function renderMenu(uiState){
+  const menu=$('#game-menu'),button=$('#game-menu-button');
+  if(menu)menu.hidden=!uiState.menuOpen;
+  if(button)button.setAttribute('aria-expanded',String(!!uiState.menuOpen));
+  const menuState=$('#coach-menu-state'),menuButton=document.querySelector('.coach-menu');
+  if(menuState)menuState.textContent=uiState.coachEnabled?'ON':'OFF';
+  if(menuButton)menuButton.classList.toggle('active',uiState.coachEnabled);
+}
+
+export function renderDevUi(uiState){
+  const host=$('#dev-ui-panel');if(!host)return;
+  host.hidden=!uiState.devUiOpen;
+  if(!uiState.devUiOpen)return;
+  const mobile=window.matchMedia('(max-width: 900px)').matches;
+  const controls=Object.entries(DEV_UI_CONTROLS).map(([key,control])=>`<label class="dev-ui-row" for="layout-${key}"><span>${esc(control.label)}</span><output data-layout-output="${key}">${uiState.desktopLayout[key]}${control.unit}</output><input id="layout-${key}" data-layout-key="${key}" type="range" min="${control.min}" max="${control.max}" step="${control.step}" value="${uiState.desktopLayout[key]}" ${mobile?'disabled':''}></label>`).join('');
+  host.innerHTML=`<div class="drawer-head"><h2>Dev UI</h2><button type="button" data-action="close-dev-ui" aria-label="Zamknij Dev UI">×</button></div><p class="dev-mobile-note" ${mobile?'':'hidden'}>Układ telefonu ma własne wartości. Strojenie jest dostępne na większym ekranie.</p><div class="dev-ui-controls">${controls}</div><div class="dev-ui-actions"><button type="button" data-action="reset-layout" class="secondary">Przywróć domyślne</button><button type="button" data-action="copy-layout" class="primary">Kopiuj ustawienia</button></div><label class="dev-layout-export" for="layout-export"><span>Ustawienia JSON</span><textarea id="layout-export" readonly>${esc(JSON.stringify(uiState.desktopLayout))}</textarea></label>`;
 }
 
 function renderScores(state){
@@ -194,5 +220,5 @@ function renderFooter(state,uiState){
 function renderLog(state){const host=$('#game-log');if(host)host.innerHTML=(state.log||[]).map(entry=>`<div class="log-item">${esc(entry.text)}</div>`).join('')}
 
 export function renderAll(state,uiState,coachModel){
-  renderScores(state);[0,1,2,3].forEach(seat=>renderSeat(state,uiState,coachModel,seat));renderPile(state);renderWishChip(state);renderContext(state,uiState);renderWishBar(uiState);renderRoundSummary(state);renderTurnStatus(state);renderActions(state);renderCoach(coachModel,uiState);renderFooter(state,uiState);renderLog(state);
+  renderScores(state);[0,1,2,3].forEach(seat=>renderSeat(state,uiState,coachModel,seat));renderPile(state);renderWishChip(state);renderContext(state,uiState);renderWishBar(uiState);renderRoundSummary(state);renderTurnStatus(state);renderActions(state);renderCoach(coachModel,uiState);renderMenu(uiState);renderDevUi(uiState);renderFooter(state,uiState);renderLog(state);
 }

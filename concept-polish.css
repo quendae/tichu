@@ -1,10 +1,69 @@
 /* Fidelity and responsive corrections after Playwright screenshot review. */
 
+/* Keep each overlapping card as one paint layer so labels/artwork from a covered card cannot bleed over the next card. */
+.card{isolation:isolate}
+
 /* Avoid CSS multiplication in calc(): simple subtraction is portable and keeps the fan deterministic. */
 .player-hand .card+.card,.opponent-hand-top .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
 
+/* Coach reads as one continuous explanation. The model still provides goal/action/reason, but the UI no longer repeats labels. */
+.coach-guide{gap:8px}
+.coach-guide>div{display:block}
+.coach-guide small{display:none}
+.coach-guide b,.coach-guide span{display:block}
+
+/* Large desktop hierarchy: scale information chrome without changing card/table sizing. */
+@media(min-width:1800px) and (min-height:800px){
+  .topbar{height:68px;padding:8px 22px;grid-template-columns:minmax(220px,1fr) auto minmax(220px,1fr)}
+  .brand-word{font-size:32px}
+  .brand small{font-size:8px}
+  .scoreboard{height:56px;border-radius:13px}
+  .score-team{min-width:148px;padding:6px 20px}
+  .score-team small{font-size:9px}
+  .score-team strong{font-size:24px}
+  .score-seal{width:74px;font-size:38px}
+  .compact-actions{gap:8px}
+  .icon-ghost{width:38px;height:38px}
+  .scene-backdrop{inset:68px 0 36px}
+  .game-menu{top:74px}
+  .table-shell{height:calc(100vh - 104px)}
+
+  .seat-top{top:16px;width:min(82%,1040px)}
+  .seat-left,.seat-right{width:196px}
+  .player-badge{max-width:300px;padding:7px 13px 7px 8px;gap:11px}
+  .avatar-glyph{font-size:24px}
+  .player-copy b{font-size:15px}
+  .player-copy small{font-size:10px}
+  .relation-tag{font-size:8px}
+
+  .exchange-seat-chip{width:152px;padding:7px 9px}
+  .exchange-seat-chip span{font-size:10px}
+  .exchange-seat-chip small{font-size:7px}
+
+  .center{width:min(72vw,1180px);gap:10px}
+  .turn-status{font-size:13px;min-height:20px}
+  .wish-chip{font-size:9px;padding:7px 12px}
+  .table-actions button{height:46px;min-width:114px;padding:0 20px}
+
+  .exchange-controller{padding:16px 18px;border-radius:14px}
+  .exchange-heading small{font-size:8px}
+  .exchange-heading b{font-size:19px}
+  .exchange-heading span{font-size:10px}
+  .exchange-recipients{gap:10px;margin:12px 0}
+  .exchange-recipient{padding:11px 10px;border-radius:12px}
+  .recipient-name{font-size:13px}
+  .exchange-recipient small{font-size:7px}
+  .recipient-card{font-size:8px;margin-top:5px}
+  .recipient-card.empty{height:36px}
+  .confirm-exchange{height:40px;padding:0 18px;font-size:15px}
+
+  .coach-dock{width:380px;right:48px;bottom:164px;padding:14px 15px}
+  .coach-actions{margin-top:12px}
+  .coach-hint,.coach-toggle{height:39px}
+}
+
 @media(max-width:680px){
-  .player-hand{--hand-step:20px;width:min(312px,calc(100vw - 34px));justify-content:center;padding-left:0}
+  .player-hand{width:min(312px,calc(100vw - 34px));justify-content:center;padding-left:0}
   .player-hand .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
   .player-hand .card.special .card-corner strong{font-size:8px;letter-spacing:-.04em}
   .decision-ribbon{display:grid;grid-template-columns:1fr;gap:7px}
@@ -15,11 +74,6 @@
 }
 
 @media(max-height:520px) and (orientation:landscape){
-  .table-menu{top:47px;left:8px;width:auto;padding:3px;display:flex;gap:2px;border-radius:8px}
-  .table-menu .menu-brand{display:none}
-  .table-menu .menu-button{display:grid!important;width:34px;height:30px;grid-template-columns:1fr;place-items:center;padding:0;margin:0}
-  .table-menu .menu-button b,.table-menu .menu-button i{display:none}
-  .table-menu .menu-button span{font-size:12px}
   .seat-top{top:-2px;transform:translateX(-50%) scale(.66);transform-origin:center top}
   .seat-left,.seat-right{top:52%}
   .center{top:43%;width:54vw;gap:2px}
@@ -30,14 +84,13 @@
   .inline-actions button{height:28px;font-size:8px;padding-inline:8px}
   .table-pile{min-height:50px}.trick-stage{height:62px}
   .coach-dock{right:108px;bottom:72px;width:205px;padding:8px 10px}
-  .coach-kicker{font-size:7px}.coach-copy>b{font-size:11px}.coach-copy p{display:none}.coach-meta{font-size:6px}
+  .coach-copy>b{font-size:11px}.coach-copy p{display:none}.coach-meta{font-size:6px}
   .coach-actions{margin-top:5px}.coach-hint,.coach-toggle{height:29px;font-size:7px}
-  .player-hand{--hand-step:28px;width:min(470px,60vw);justify-content:center}
-  .player-hand .card+.card{margin-left:calc(var(--hand-step) - 46px)}
+  .player-hand{width:min(470px,60vw);justify-content:center}
+  .player-hand .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
   .player-hand .card.special .card-corner strong{font-size:8px}
 }
 
 @media(max-height:400px) and (orientation:landscape){
-  .table-quote{display:none}
   .seat-top .player-copy small{display:none}
 }
