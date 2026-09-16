@@ -25,6 +25,17 @@ test('recorded action stream replays to the same final summary',()=>{
   assert.equal(replayed.finalSummary,result.replay.actions.at(-1).summaryAfter);
 });
 
+test('failure replay reproduces the recorded failure boundary',()=>{
+  const result=runDeterministicMatch({seed:17,stepLimit:1,checkpointEvery:0});
+  assert.equal(result.ok,false);
+  assert.equal(result.replay.failure?.code,'STEP_LIMIT');
+  const replayed=replayDeterministicMatch(result.replay);
+  assert.equal(replayed.ok,true,JSON.stringify(replayed,null,2));
+  assert.equal(replayed.reproducedFailure,true);
+  assert.equal(replayed.failureCode,'STEP_LIMIT');
+  assert.equal(replayed.step,1);
+});
+
 test('batch runner completes ten deterministic matches',()=>{
   const result=runSimulationBatch({matches:10,baseSeed:1000,stepLimit:10000});
   assert.equal(result.ok,true,failureMessage(result?.result||result));
