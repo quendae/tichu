@@ -19,6 +19,8 @@ jobs:
       - run: npm run test:e2e
       - name: Live multiplayer E2E
         run: npm run test:e2e:multiplayer
+      - name: One-shot full multiplayer smoke
+        run: npm run test:e2e:multiplayer:full
       - name: Upload UI and multiplayer diagnostics
         if: always()
         uses: actions/upload-artifact@v4
