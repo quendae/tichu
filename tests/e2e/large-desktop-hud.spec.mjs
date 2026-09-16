@@ -17,7 +17,7 @@ test('large desktop scales HUD while Coach shows help without section labels', a
         text: node.textContent.trim(),
         display: getComputedStyle(node).display,
       })),
-      coachGuideColumns: style('.coach-guide > div').gridTemplateColumns,
+      coachSectionDisplay: style('.coach-guide > div').display,
     };
   });
 
@@ -28,7 +28,7 @@ test('large desktop scales HUD while Coach shows help without section labels', a
   expect(initial.playerMetaSize).toBeGreaterThanOrEqual(10);
   expect(initial.coachLabels.map(label => label.text)).toEqual(['Cel', 'Teraz', 'Dlaczego']);
   for (const label of initial.coachLabels) expect(label.display).toBe('none');
-  expect(initial.coachGuideColumns).toBe('none');
+  expect(initial.coachSectionDisplay).toBe('block');
 
   await page.evaluate(() => {
     const game = window.tichu.game;
