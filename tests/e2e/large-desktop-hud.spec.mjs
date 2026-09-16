@@ -10,8 +10,9 @@ test('large desktop scales HUD while Coach shows help without section labels', a
     return {
       topbarHeight: rect('.topbar')?.height ?? 0,
       scoreboardHeight: rect('.scoreboard')?.height ?? 0,
-      playerBadgeHeight: rect('.seat-top .player-badge')?.height ?? 0,
+      playerBadgePaddingTop: parseFloat(style('.seat-top .player-badge').paddingTop),
       playerNameSize: parseFloat(style('.seat-top .player-copy b').fontSize),
+      playerMetaSize: parseFloat(style('.seat-top .player-copy small').fontSize),
       coachLabels: [...document.querySelectorAll('.coach-guide small')].map(node => ({
         text: node.textContent.trim(),
         display: getComputedStyle(node).display,
@@ -22,8 +23,9 @@ test('large desktop scales HUD while Coach shows help without section labels', a
 
   expect(initial.topbarHeight).toBeGreaterThanOrEqual(66);
   expect(initial.scoreboardHeight).toBeGreaterThanOrEqual(54);
-  expect(initial.playerBadgeHeight).toBeGreaterThanOrEqual(68);
+  expect(initial.playerBadgePaddingTop).toBeGreaterThanOrEqual(7);
   expect(initial.playerNameSize).toBeGreaterThanOrEqual(15);
+  expect(initial.playerMetaSize).toBeGreaterThanOrEqual(10);
   expect(initial.coachLabels.map(label => label.text)).toEqual(['Cel', 'Teraz', 'Dlaczego']);
   for (const label of initial.coachLabels) expect(label.display).toBe('none');
   expect(initial.coachGuideColumns).toBe('none');
