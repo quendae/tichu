@@ -1,5 +1,8 @@
 /* Fidelity and responsive corrections after Playwright screenshot review. */
 
+/* Keep each overlapping card as one paint layer so labels/artwork from a covered card cannot bleed over the next card. */
+.card{isolation:isolate}
+
 /* Avoid CSS multiplication in calc(): simple subtraction is portable and keeps the fan deterministic. */
 .player-hand .card+.card,.opponent-hand-top .card+.card{margin-left:calc(var(--hand-step) - var(--card-width))}
 
