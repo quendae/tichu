@@ -110,11 +110,15 @@ function exchangeAssignmentsHTML(state,uiState){
 function renderContext(state,uiState){
   const host=$('#context-panel');if(!host)return;host.className='context-panel';
   if(state.phase==='grand'){
+    const renderKey=`grand:${state.declarations?.[0]?'waiting':'decision'}`;
+    if(host.dataset.renderKey===renderKey)return;
+    host.dataset.renderKey=renderKey;
     host.innerHTML=state.declarations?.[0]
       ?'<div class="inline-note">Decyzja Grand Tichu zapisana. Czekamy na pozostałych…</div>'
       :`<div class="decision-ribbon grand-ribbon"><div><small>PIERWSZE 8 KART</small><b>Grand Tichu?</b><span>Wyjdziesz pierwszy: +200 · inaczej: −200</span></div><div class="inline-actions"><button type="button" data-inline="grand-pass" class="secondary">Pas</button><button type="button" data-inline="grand-call" class="primary">Grand Tichu +200</button></div></div>`;
     return;
   }
+  delete host.dataset.renderKey;
   if(state.phase==='exchange'){
     if(state.exchangeDone?.[0])host.innerHTML='<div class="inline-note"><b>Wymiana zatwierdzona ✓</b><span>Czekamy na pozostałych graczy.</span></div>';
     else{
