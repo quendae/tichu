@@ -58,6 +58,13 @@ export async function startWithBots(host){
   await expect.poll(()=>bridgeStatus(host).then(status=>status.active)).toBe(true);
 }
 
+export async function startWithoutBots(host){
+  await host.page.locator('#mp-bots').uncheck();
+  await expect(host.page.locator('#mp-start')).toBeEnabled();
+  await host.page.locator('#mp-start').click();
+  await expect.poll(()=>bridgeStatus(host).then(status=>status.active)).toBe(true);
+}
+
 const actualSeat=(local,viewer)=>(viewer+local)%4;
 
 export const canonicalBotSeats=status=>(status.botSeats||[]).map(local=>actualSeat(local,status.seat));
