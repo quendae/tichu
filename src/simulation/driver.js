@@ -127,6 +127,63 @@ export function runDeterministicMatch({seed,stepLimit=10000,checkpointEvery=100,
   }
 }
 
+function replayRecordedFailure(game,replay){
+  const failure=replay.failure;
+  if(!failure)return null;
+
+  if(failure.code==='STEP_LIMIT'){
+    const limit=replay.config?.stepLimit;
+    const reproduced=Number.isInteger(limit)&&replay.actions.length>=limit&&failure.step===replay.actions.length;
+    return reproduced
+      ?{ok:true,step:failure.step,reproducedFailure:true,failureCode:'STEP_LIMIT',finalSummary:stateSummary(game.state)}
+      :{ok:false,step:replay.actions.length,message:'Recorded STEP_LIMIT boundary did not reproduce',expected:failure.step,actual:replay.actions.length};
+  }
+
+  if(failure.code==='DEADLOCK'){
+    const recent=replay.actions.slice(-3).map(action=>action.summaryAfter);
+    const reproduced=recent.length===3&&recent.every(summary=>summary===recent[0])&&failure.step===replay.actions.length;
+    return reproduced
+      ?{ok:true,step:failure.step,reproducedFailure:true,failureCode:'DEADLOCK',finalSummary:stateSummary(game.state)}
+      :{ok:false,step:replay.actions.length,message:'Recorded DEADLOCK boundary did not reproduce'};
+  }
+
+  if(!failure.action){
+    return{ok:false,step:replay.actions.length,message:`Recorded ${failure.code} failure has no action to reproduce`};
+  }
+
+  if(failure.beforeState){
+    const expectedBefore=stateSummary(failure.beforeState);
+    const actualBefore=stateSummary(game.state);
+    if(expectedBefore!==actualBefore){
+      return{ok:false,step:failure.step,message:'Failure pre-state diverged',expected:expectedBefore,actual:actualBefore};
+    }
+  }
+
+  const previousState=normalizeState(game.state);
+  try{
+    applySimulationAction(game,failure.action);
+    assertSimulationInvariants(game.state,{
+      expectedDeckIds,
+      previousState,
+      lastAction:failure.action,
+    });
+  }catch(error){
+    const actualCode=error instanceof SimulationInvariantError?error.code:'SIMULATION_ERROR';
+    if(actualCode===failure.code){
+      return{
+        ok:true,
+        step:failure.step,
+        reproducedFailure:true,
+        failureCode:actualCode,
+        finalSummary:stateSummary(game.state),
+      };
+    }
+    return{ok:false,step:failure.step,message:'Failure code diverged',expected:failure.code,actual:actualCode,error};
+  }
+
+  return{ok:false,step:failure.step,message:'Expected failure did not reproduce',expected:failure.code,actual:'NO_FAILURE'};
+}
+
 export function replayDeterministicMatch(replay){
   try{
     validateReplayDocument(replay);
@@ -148,6 +205,8 @@ export function replayDeterministicMatch(replay){
         return{ok:false,step:action.step,message:'State summary diverged',expected:action.summaryAfter,actual};
       }
     }
+    const failureResult=replayRecordedFailure(game,replay);
+    if(failureResult)return failureResult;
     return{ok:true,step:replay.actions.length,finalSummary:stateSummary(game.state)};
   }catch(error){
     return{ok:false,step:0,message:error.message,error};
