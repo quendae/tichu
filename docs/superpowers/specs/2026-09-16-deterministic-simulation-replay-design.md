@@ -1,7 +1,7 @@
 # Deterministic Simulation and Replay Harness
 
 Date: 2026-09-16
-Status: proposed / approved in chat, pending written-spec review
+Status: approved in chat, pending written-spec review
 Scope: `quendae/tichu`
 
 ## Goal
@@ -35,25 +35,33 @@ new TichuGame({ rng });
 
 No global monkey-patching of `Math.random()` is allowed.
 
-### 2. Simulation driver
+### 2. Simulation-safe scheduling seam
+
+The current game schedules bot work with `setTimeout`. Add a constructor option such as `autoSchedule` (default `true`). Production keeps today's behavior. Simulation sets it to `false`, so public game actions can transition state without recursively starting timers.
+
+This option changes scheduling only; it must not change rules, bot decisions, scoring, or UI-visible state.
+
+### 3. Simulation driver
 
 Add a headless driver separate from UI code. It controls all four seats and advances the existing `TichuGame` methods synchronously instead of relying on bot timers.
 
 The driver will:
 
-1. start/reset a match;
-2. resolve the Grand Tichu window for all four bot seats;
-3. resolve exchange for all four bot seats;
-4. repeatedly execute the current seat's bot action;
-5. resolve Dragon recipient choices deterministically;
-6. advance round-end to the next round;
-7. stop at match-end or fail on an action/step budget.
+1. construct a game with seeded RNG and automatic scheduling disabled;
+2. configure all four seats as bots;
+3. start/reset a match;
+4. resolve the Grand Tichu window for all four seats using the existing bot decision helpers;
+5. resolve exchange for all four seats using the existing bot exchange logic;
+6. repeatedly execute the current seat's existing bot decision path;
+7. resolve Dragon recipient choices deterministically;
+8. advance round-end to the next round;
+9. stop at match-end or fail on an action/step budget.
 
 The driver must use the existing game/rules APIs (`declareGrand`, `submitExchange`, `playCards`, `pass`, `collectTrick`, `nextRound`, etc.) rather than duplicating rules.
 
-Timer-based bot scheduling must be bypassed in simulation mode. The production scheduling path remains unchanged.
+Where current bot helpers combine "choose" and "mutate" behavior, implementation may extract small pure decision helpers so both timed production bots and the synchronous simulation call the same decision code. The simulation must not maintain a second rules engine or second bot strategy.
 
-### 3. Replay recorder
+### 4. Replay recorder
 
 The replay format is developer-only JSON and may contain complete hidden information for all four seats.
 
@@ -66,7 +74,8 @@ Proposed top-level schema:
   "format": "tichu-dev-replay-v1",
   "createdAt": "2026-09-16T10:00:00.000Z",
   "seed": 738,
-  "engineVersion": "git-or-package-version",
+  "engineVersion": "0.2.0",
+  "gitSha": "optional-ci-or-local-sha",
   "config": {
     "targetScore": 1000,
     "stepLimit": 10000
@@ -81,8 +90,8 @@ Proposed top-level schema:
       "seat": 0,
       "type": "declareGrand",
       "payload": { "yes": false },
-      "summaryBefore": "compact summary/hash",
-      "summaryAfter": "compact summary/hash"
+      "summaryBefore": "compact deterministic summary",
+      "summaryAfter": "compact deterministic summary"
     }
   ],
   "checkpoints": [
@@ -94,6 +103,8 @@ Proposed top-level schema:
   "failure": null
 }
 ```
+
+`engineVersion` is the package version. `gitSha` is optional metadata when available from CI/environment and is never required for deterministic comparison.
 
 On failure, `failure` includes:
 
@@ -107,9 +118,11 @@ On failure, `failure` includes:
 
 Replay serialization must normalize non-JSON state such as `Set` values (`selected`) into arrays.
 
-### 4. Replay runner
+`createdAt`, log timestamps, random log IDs, and optional `gitSha` are diagnostic metadata and are excluded from deterministic replay comparisons.
 
-Add a CLI entry point that loads a developer replay and reproduces it using the same seeded RNG and action sequence.
+### 5. Replay runner
+
+Add a CLI entry point that loads a developer replay and reproduces it using the same seeded RNG and recorded action sequence.
 
 Target command:
 
@@ -125,20 +138,21 @@ The runner validates:
 - deterministic state summaries/checkpoints;
 - expected failure point, when present.
 
-On divergence it exits non-zero and reports the first differing step.
+On divergence it exits non-zero and reports the first differing step. A replay is regenerated from seed + actions; full snapshots are diagnostic/checkpoint evidence rather than an alternate rules execution path.
 
-### 5. Invariant checker
+### 6. Invariant checker
 
-Invariant checks run after every meaningful game transition in simulation mode.
+Invariant checks run after every meaningful state-changing transition in simulation mode.
 
 Initial invariant set:
 
 #### Card conservation and uniqueness
 
-- Every card ID appears in at most one live location.
-- During a complete round, cards are accounted for across hands, table, captured piles, and undealt `remainingDeck` where applicable.
-- The total set of card IDs is the expected 56-card Tichu deck.
+- Every card ID appears in at most one physical live location during deal/exchange/play: hands, table, captured piles, and `remainingDeck` where applicable.
+- During deal/exchange/play, those live locations account for exactly the expected 56-card Tichu deck.
 - No hand contains duplicate card IDs.
+- At `round-end`/`match-end`, scoring redistribution is validated through a normalized ownership/accounting view. Historical/scoring bookkeeping must not create a false positive if the engine intentionally retains references after points are computed.
+- If simulation shows that the engine duplicates physical cards in a way that is not required for scoring/history, that is treated as an existing state-model bug and fixed with a targeted regression test.
 
 #### Turn/state coherence
 
@@ -168,14 +182,15 @@ Initial invariant set:
 - Double victory only applies when the first two finishers are teammates.
 - Round scores are finite numbers.
 - Match scores equal accumulated round deltas produced by the engine.
-- `match-end` has a non-null winner and a non-tied score at/above the target threshold.
+- `match-end` has a non-null winner and a non-tied score at/above the current engine target of 1000 points.
 
 #### Progress / deadlock protection
 
-- A configurable maximum number of transitions is enforced per round and per match.
-- Repeated identical state summaries beyond a small threshold are treated as a potential deadlock.
+- Configurable maximum transitions are enforced per round and per match.
+- The driver counts state-changing actions, not `emit()` calls or log-only noise.
+- Repeated identical deterministic state summaries beyond a small threshold are treated as a potential deadlock.
 
-### 6. State summaries
+### 7. State summaries
 
 For fast comparison, each transition stores a deterministic compact state summary derived from stable game fields rather than object identity or log timestamps.
 
@@ -186,16 +201,17 @@ The summary includes at minimum:
 - ordered hand card IDs for each seat;
 - table entries and card IDs;
 - captured card IDs;
+- remaining deck card IDs while present;
 - finished order;
 - wish;
 - declarations;
-- exchange completion state;
+- exchange completion/pass-selection state needed for deterministic continuation;
 - scores and round score;
 - Dragon/pending-round-end state.
 
 Wall-clock log timestamps and random UUIDs are excluded from deterministic comparison.
 
-### 7. CLI simulation runner
+### 8. CLI simulation runner
 
 Add commands with practical defaults:
 
@@ -222,6 +238,7 @@ Add focused tests for:
 
 - seeded PRNG repeatability;
 - injected RNG producing identical deals for identical seeds;
+- automatic scheduling remaining enabled by default and disabled only for simulation;
 - replay state serialization/deserialization;
 - invariant checker detecting intentionally malformed states;
 - replay reproducing a deterministic short scenario;
@@ -229,9 +246,9 @@ Add focused tests for:
 
 ### Simulation regression test
 
-Normal CI runs a bounded deterministic sample, initially 100 complete matches. This should remain fast enough for every PR.
+Normal CI runs a bounded deterministic sample, initially 100 complete matches. The exact count may be reduced only if measured CI runtime is materially excessive; the goal remains enough complete matches to exercise many rounds on every PR.
 
-A separate manually-invoked or scheduled command supports 1,000-10,000+ matches without making every PR slow.
+A separate manually-invoked command supports 1,000-10,000+ matches without making every PR slow. Scheduling a nightly workflow is optional follow-up work, not required for the first implementation.
 
 Any seed that exposes a real engine bug should be added as a permanent targeted regression test after the bug is fixed.
 
@@ -264,7 +281,7 @@ Developer replay files intentionally contain all hidden hands and therefore must
 
 Likely files/modules:
 
-- `src/game.js` — optional injected RNG and a small simulation-safe scheduling seam;
+- `src/game.js` — optional injected RNG, automatic-scheduling seam, and possibly extracted shared bot decision helpers;
 - `src/simulation/rng.js` — seeded PRNG;
 - `src/simulation/invariants.js` — invariant checks;
 - `src/simulation/replay.js` — normalization, summaries, recorder/replay helpers;
@@ -282,7 +299,7 @@ Exact file boundaries may be adjusted during implementation if the existing code
 1. Two simulations with the same seed produce the same initial deal and same deterministic action/state-summary sequence.
 2. Different seeds produce independently shuffled games.
 3. A headless full match reaches `match-end` without timers or browser APIs.
-4. Invariants are checked after every simulation transition.
+4. Invariants are checked after every state-changing simulation transition.
 5. A deliberate invariant violation creates a useful failure record.
 6. A saved failure replay can be reproduced by the replay CLI to the same step.
 7. Generated failure replay artifacts are not committed by default.
