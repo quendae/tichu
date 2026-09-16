@@ -16,7 +16,8 @@ Przeglądarkowa wersja klasycznego **Tichu** dla czterech graczy. Projekt korzys
 - double victory 200:0, punktacja kart i mecz do 1000 punktów;
 - responsywny stół dla desktopu, tabletu i telefonu;
 - dziennik gry i skrócone zasady w interfejsie;
-- multiplayer QQND: pokoje publiczne/prywatne, kod pokoju, Quick Play, prywatne ręce, reconnect i bot takeover.
+- multiplayer QQND: pokoje publiczne/prywatne, kod pokoju, Quick Play, prywatne ręce, reconnect i bot takeover;
+- deterministyczny headless simulator pełnych meczów z invariantami i developerskim replayem błędów.
 
 ## Uruchomienie lokalne
 
@@ -32,10 +33,33 @@ Następnie otwórz:
 http://localhost:8080
 ```
 
-Testy reguł:
+Testy reguł i regresji:
 
 ```bash
 npm test
+```
+
+## Testy deterministyczne i replay
+
+CI uruchamia dodatkowy smoke test 20 pełnych, deterministycznych meczów bot-vs-bot:
+
+```bash
+npm run test:sim
+```
+
+Większy lokalny przebieg można uruchomić bez przeglądarki, np.:
+
+```bash
+npm run sim -- --matches 100 --seed 1
+npm run sim -- --matches 1000 --seed 1 --quiet
+```
+
+Każdy mecz korzysta z zapisanego seeda, sprawdza invarianty stanu po każdej zmianie i zatrzymuje batch na pierwszym błędzie. Przy failure pełny developerski replay jest zapisywany w `artifacts/replays/`. Plik zawiera ukryte ręce wszystkich graczy i służy wyłącznie do diagnostyki; katalog jest ignorowany przez Git.
+
+Odtworzenie zapisanego przypadku:
+
+```bash
+npm run replay -- artifacts/replays/failure-seed-738.json
 ```
 
 ## Multiplayer
@@ -56,10 +80,12 @@ Obsługa Tichu po stronie serwera znajduje się w osobnym repozytorium `quendae/
 - `styles.css` — responsywna oprawa stołu i kart;
 - `src/rules.js` — klasyfikacja kombinacji, bomby, Phoenix, życzenia i punktacja;
 - `src/game.js` — lokalny przebieg rundy, wymiana, scoring i boty;
+- `src/simulation/` — seeded RNG, invarianty, replay i synchroniczny driver symulacji;
+- `scripts/simulate.mjs` / `scripts/replay.mjs` — narzędzia developerskie do stress testów i odtwarzania failure;
 - `src/multiplayer.js` — klient wspólnego QQND Game Server;
 - `src/ui.js` — renderowanie i obsługa interakcji;
-- `tests/` — testy regresyjne reguł.
+- `tests/` — testy reguł, regresji, symulacji oraz Playwright dla UI.
 
 ## Status
 
-Pierwsza grywalna wersja jest przygotowana do przeglądu. Przed produkcyjnym wdrożeniem warto jeszcze zrobić szerokie testy automatyczne całych rozgrywek oraz Playwright na typowych rozdzielczościach telefonu, tabletu i desktopu.
+Wersja lokalna ma pokrycie jednostkowe/regresyjne, deterministyczne pełne rozgrywki bot-vs-bot oraz Playwright na typowych rozdzielczościach telefonu, tabletu i desktopu. Następnym większym etapem po domknięciu tego harnessu jest pełne E2E multiplayer przez QQND Game Server, a potem dalsze ulepszanie strategii botów.
