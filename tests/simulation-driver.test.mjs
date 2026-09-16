@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runDeterministicMatch,runSimulationBatch,replayDeterministicMatch } from '../src/simulation/driver.js';
 
+const failureMessage=result=>JSON.stringify(result?.replay?.failure||result,null,2);
+
 test('same seed produces identical action summaries',()=>{
   const a=runDeterministicMatch({seed:738,stepLimit:10000,checkpointEvery:25});
   const b=runDeterministicMatch({seed:738,stepLimit:10000,checkpointEvery:25});
-  assert.equal(a.ok,true);
-  assert.equal(b.ok,true);
+  assert.equal(a.ok,true,failureMessage(a));
+  assert.equal(b.ok,true,failureMessage(b));
   assert.deepEqual(
     a.replay.actions.map(action=>[action.type,action.summaryBefore,action.summaryAfter]),
     b.replay.actions.map(action=>[action.type,action.summaryBefore,action.summaryAfter]),
@@ -16,15 +18,15 @@ test('same seed produces identical action summaries',()=>{
 
 test('recorded action stream replays to the same final summary',()=>{
   const result=runDeterministicMatch({seed:99,stepLimit:10000,checkpointEvery:20});
-  assert.equal(result.ok,true);
+  assert.equal(result.ok,true,failureMessage(result));
   const replayed=replayDeterministicMatch(result.replay);
-  assert.equal(replayed.ok,true);
+  assert.equal(replayed.ok,true,JSON.stringify(replayed,null,2));
   assert.equal(replayed.finalSummary,result.replay.actions.at(-1).summaryAfter);
 });
 
 test('batch runner completes ten deterministic matches',()=>{
   const result=runSimulationBatch({matches:10,baseSeed:1000,stepLimit:10000});
-  assert.equal(result.ok,true);
+  assert.equal(result.ok,true,failureMessage(result?.result||result));
   assert.equal(result.matches,10);
   assert.ok(result.steps>0);
 });
