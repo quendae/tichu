@@ -31,8 +31,7 @@
   .seat-top{top:16px;width:min(82%,1040px)}
   .seat-left,.seat-right{width:196px}
   .player-badge{max-width:300px;padding:7px 13px 7px 8px;gap:11px}
-  .avatar{width:calc(56px * (var(--badge-scale) / 100%));height:calc(56px * (var(--badge-scale) / 100%));flex:0 0 calc(56px * (var(--badge-scale) / 100%))}
-  .avatar-glyph{font-size:26px}
+  .avatar-glyph{font-size:24px}
   .player-copy b{font-size:15px}
   .player-copy small{font-size:10px}
   .relation-tag{font-size:8px}
