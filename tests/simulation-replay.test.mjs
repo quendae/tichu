@@ -23,6 +23,27 @@ test('normalizeState converts Set and remains JSON-safe',()=>{
   assert.equal(normalized.hands.length,4);
 });
 
+test('normalizeState isolates mutable match metadata from live state',()=>{
+  const game=makeGame();
+  const normalized=normalizeState(game.state);
+  game.state.scores[0]=123;
+  game.state.roundScore[1]=45;
+  game.state.declarations[0]='grand';
+  game.state.exchangeDone[2]=true;
+  game.state.finished.push(3);
+  game.state.names[0]='Changed';
+  game.state.botSeats.pop();
+  game.state.settings.sound=false;
+  assert.deepEqual(normalized.scores,[0,0]);
+  assert.deepEqual(normalized.roundScore,[0,0]);
+  assert.deepEqual(normalized.declarations,[null,null,null,null]);
+  assert.deepEqual(normalized.exchangeDone,[false,false,false,false]);
+  assert.deepEqual(normalized.finished,[]);
+  assert.deepEqual(normalized.names,['A','B','C','D']);
+  assert.deepEqual(normalized.botSeats,[0,1,2,3]);
+  assert.equal(normalized.settings.sound,true);
+});
+
 test('stateSummary ignores log UUID and timestamp noise',()=>{
   const game=makeGame();
   const before=stateSummary(game.state);
