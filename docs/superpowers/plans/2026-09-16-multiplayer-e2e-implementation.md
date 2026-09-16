@@ -500,7 +500,12 @@ export async function openE2EClient(browser,baseURL,label){
   const context=await browser.newContext(),page=await context.newPage(),errors=[];
   page.on('console',m=>{if(m.type()==='error')errors.push(`console:${m.text()}`)});
   page.on('pageerror',e=>errors.push(`page:${e.message}`));
-  page.on('websocket',ws=>ws.on('socketerror',e=>errors.push(`websocket:${String(e)}`)));
+  page.on('websocket',ws=>{
+    ws.on('socketerror',e=>errors.push(`websocket:${String(e)}`));
+    ws.on('framereceived',payload=>{
+      try{const message=JSON.parse(String(payload));if(message?.type==='error')errors.push(`server:${message.code||message.message||'error'}`)}catch{}
+    });
+  });
   await page.goto(`${baseURL}/?e2e=1`);
   await expect.poll(()=>page.evaluate(()=>typeof window.__tichuE2E)).toBe('object');
   return {context,page,label,errors};
@@ -644,13 +649,11 @@ test('production QQND: 2 humans + 2 bots synchronize, redact and reconnect',asyn
     roomId=await createPrivateRoom(h1,nicknames[0]);await joinPrivateRoom(h2,nicknames[1],roomId);await startWithBots(h1);
     await expect.poll(()=>bridgeStatus(h2).then(s=>s.active)).toBe(true);
     const initial=[await bridgeState(h1),await bridgeState(h2)];
-    initial.forEach(s=>expect(Array.isArray(s.discarded)).toBe(true));
-    initial.forEach(assertPrivateHands);
+    initial.forEach(s=>expect(Array.isArray(s.discarded)).toBe(true));initial.forEach(assertPrivateHands);
 
     let completedTricks=0,actions=0,previous=initial[0];const deadline=Date.now()+45_000;
     while(Date.now()<deadline&&completedTricks<1){
-      let acted=false;
-      for(const client of [h1,h2]){const result=await driveHumanDecision(client);if(result.acted){acted=true;actions++;break}}
+      let acted=false;for(const client of [h1,h2]){const result=await driveHumanDecision(client);if(result.acted){acted=true;actions++;break}}
       if(!acted)await new Promise(resolve=>setTimeout(resolve,200));
       const current=await bridgeState(h1);
       if(previous.table?.length>0&&current.table?.length===0&&current.lastPlay===null&&(current.discarded?.length||0)===(previous.discarded?.length||0))completedTricks++;
@@ -713,7 +716,7 @@ export async function startWithoutBots(host){
 import {test,expect} from '@playwright/test';
 import {
   assertPrivateHands,attachDiagnostics,bridgeState,bridgeStatus,canonicalPublicSummary,cleanupClients,
-  createPrivateRoom,driveHumanDecision,joinPrivateRoom,openE2EClient,runTag,startWithoutBots,
+  createPrivateRoom,driveHumanDecision,joinPrivateRoom,openE2EClient,runTag,startWithoutBots,waitForSameRevision,
 } from './helpers.mjs';
 
 test('production QQND: four humans play with no bots',async({browser},testInfo)=>{
@@ -727,6 +730,7 @@ test('production QQND: four humans play with no bots',async({browser},testInfo)=
     let playActions=0;const deadline=Date.now()+60_000;
     while(Date.now()<deadline&&playActions<6){let acted=false;for(const c of clients){const r=await driveHumanDecision(c);if(r.acted){acted=true;if(['play','pass','dragon'].includes(r.type))playActions++;break}}if(!acted)await new Promise(r=>setTimeout(r,200))}
     expect(playActions).toBeGreaterThanOrEqual(6);
+    await waitForSameRevision(clients);
     const summaries=await Promise.all(clients.map(async c=>canonicalPublicSummary(await bridgeState(c),await bridgeStatus(c))));for(const s of summaries.slice(1))expect(s).toEqual(summaries[0]);
     for(const c of clients)expect((await bridgeStatus(c)).botSeats).toEqual([]);
   }catch(error){failed=true;throw error}
@@ -750,7 +754,7 @@ test('production QQND: disconnected human becomes substitute bot after grace',as
     await h2.context.close();clients.splice(clients.indexOf(h2),1);
     await expect.poll(async()=>{const s=await bridgeStatus(h1);return s.presence.some(p=>p.seat===disconnectedSeat&&p.botActive===true)},{timeout:75_000,interval:1_000}).toBe(true);
     await expect.poll(async()=>canonicalBotSeats(await bridgeStatus(h1)).includes(disconnectedSeat),{timeout:5_000}).toBe(true);
-    const deadline=Date.now()+15_000;while(Date.now()<deadline&&(await bridgeStatus(h1)).stateSeq<=revisionBefore){await driveHumanDecision(h1);await new Promise(r=>setTimeout(r,200))}
+    const deadline=Date.now()+15_000;while(Date.now()<deadline&&(await bridgeStatus(h1)).stateSeq<=revisionBefore){const r=await driveHumanDecision(h1);if(!r.acted)await new Promise(resolve=>setTimeout(resolve,200))}
     expect((await bridgeStatus(h1)).stateSeq).toBeGreaterThan(revisionBefore);
   }catch(error){failed=true;throw error}
   finally{if(failed)await attachDiagnostics(testInfo,clients,roomId,nicknames);const e=await cleanupClients(clients);if(e.length)await testInfo.attach('cleanup-errors',{body:e.join('\n'),contentType:'text/plain'})}
