@@ -102,6 +102,12 @@ test('missing decorative assets preserve cards and keyboard actions', async ({ p
     glyph: getComputedStyle(document.querySelector('.back-glyph')).color,
   }));
   for (const color of Object.values(fallback)) expect(color).not.toBe('rgba(0, 0, 0, 0)');
+  await page.evaluate(() => {
+    const game = window.tichu.game;
+    clearTimeout(game.botTimer);
+    game.botDelay = 0;
+    game.scheduleBots();
+  });
   const pass = page.locator('[data-inline="grand-pass"]');
   await pass.focus();
   await page.keyboard.press('Enter');
