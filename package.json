@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "test:sim": "node scripts/simulate.mjs --matches 20 --seed 1 --quiet",
+    "sim": "node scripts/simulate.mjs",
+    "replay": "node scripts/replay.mjs",
     "test:e2e": "playwright test",
     "serve": "node scripts/serve.mjs"
   },
