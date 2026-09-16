@@ -33,6 +33,7 @@ function collectLiveCardIds(state,expectedSet){
   (state.captured||[]).forEach((pile,seat)=>{
     for(const id of assertPileIds(pile,expectedSet,`captured:${seat}`))observed.push({id,location:`captured:${seat}`});
   });
+  for(const id of assertPileIds(state.discarded||[],expectedSet,'discarded'))observed.push({id,location:'discarded'});
   for(const id of assertPileIds(state.remainingDeck||[],expectedSet,'remainingDeck'))observed.push({id,location:'remainingDeck'});
   return observed;
 }
