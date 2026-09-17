@@ -62,6 +62,27 @@ Odtworzenie zapisanego przypadku:
 npm run replay -- artifacts/replays/failure-seed-738.json
 ```
 
+## Bot AI
+
+Aktualne boty są legalne i deterministyczne, ale ich strategia jest celowo prosta: Grand/Tichu opierają się głównie na liczbie mocnych kart, wymiana jest schematyczna, a podczas gry bot zwykle wybiera najtańszy legalny ruch i zachowuje bomby.
+
+Na branchu `feature/bot-ai-v1` rozwijany jest **Bot AI v1** z dwoma profilami:
+
+- `baseline` — zamrożone obecne zachowanie używane jako punkt odniesienia;
+- `strategic` — nowa deterministyczna strategia uwzględniająca strukturę ręki, liczbę przewidywanych wyjść, grę partnera, deklaracje Tichu/Grand Tichu, zagrożenie końcówką, użycie bomb, Mah Jong wish i wybór odbiorcy Dragon.
+
+Najważniejszą zasadą jest **brak oszukiwania przez ukryty stan**. Strategiczny bot może korzystać tylko z własnej ręki, publicznego stanu gry i informacji, które sam poznał podczas wymiany. Przetasowanie ukrytych kart innych graczy przy zachowaniu tego samego widoku bota nie może zmienić jego decyzji.
+
+Bot AI v1 będzie utrzymywany równolegle w kliencie i w authoritative `qqnd-game-server`. Obie implementacje będą sprawdzane tym samym logicznym zestawem parity fixtures, aby bot lokalny i bot online podejmowały równoważne decyzje.
+
+Jako quality gate powstaje benchmark `strategic` vs `baseline` na tych samych seedach z zamianą stron. Pełny developerski benchmark ma rozgrywać 200 par seedów / 400 meczów i raportować m.in. win rate, średnią różnicę punktów, skuteczność Tichu/Grand, double victories i średnią kolejność wychodzenia. CI będzie uruchamiać tylko mniejszy smoke benchmarku; pełny przebieg pozostanie ręcznym testem jakości.
+
+Pełny zaakceptowany projekt znajduje się w:
+
+```text
+docs/superpowers/specs/2026-09-17-bot-ai-v1-design.md
+```
+
 ## Multiplayer
 
 Klient łączy się z tym samym endpointem co Skat:
@@ -106,4 +127,4 @@ Bridge testowy istnieje wyłącznie przy `?e2e=1` i udostępnia tylko stan już 
 
 ## Status
 
-Projekt ma pokrycie jednostkowe/regresyjne, deterministyczne pełne rozgrywki bot-vs-bot, responsywne Playwright E2E oraz produkcyjne testy multiplayer przez QQND Game Server. Bounded 2H+2B z reconnect działa w domyślnym CI, a cięższe 4H i 60-sekundowy bot takeover pozostają ręcznym smoke testem. Następnym etapem jest dalsze ulepszanie strategii botów i polish rozgrywki online.
+Projekt ma pokrycie jednostkowe/regresyjne, deterministyczne pełne rozgrywki bot-vs-bot, responsywne Playwright E2E oraz produkcyjne testy multiplayer przez QQND Game Server. Bounded 2H+2B z reconnect działa w domyślnym CI, a cięższe 4H i 60-sekundowy bot takeover pozostają ręcznym smoke testem. Aktualnym etapem rozwoju jest Bot AI v1: wydzielenie `baseline`, implementacja `strategic`, parity klient/serwer oraz benchmark strategic vs baseline przed przełączeniem authoritative botów na nową strategię.
