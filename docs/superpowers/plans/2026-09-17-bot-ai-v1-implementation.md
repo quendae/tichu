@@ -4,7 +4,7 @@
 
 **Goal:** Replace the current simple Tichu bot policy with a deterministic, team-aware `strategic` heuristic policy, prove it beats the frozen `baseline` in paired deterministic benchmarks, and deploy the same policy to authoritative multiplayer bots without hidden-hand cheating.
 
-**Architecture:** Extract bot decisions from the game engines into pure strategy modules fed only by a normalized `BotView`. Keep `baseline` and `strategic` profiles side by side, let the client simulator assign a policy per seat, and validate strategy quality with paired seeded matches. Port the same contract and canonical fixture corpus to `qqnd-game-server`; keep the server/client defaults on `baseline` until the full acceptance benchmark, parity tests, server CI, deployment, and production smoke are green.
+**Architecture:** Extract bot decisions from the game engines into pure strategy modules fed only by a normalized `BotView`. The game/rules engine computes legal play options and passes them as `BotView.legalPlays`; the strategy never imports the authoritative engine just to discover legality, avoiding a server import cycle and strengthening the information boundary. Keep `baseline` and `strategic` profiles side by side, let the client simulator assign a policy per seat, and validate strategy quality with paired seeded matches. Port the same contract and canonical fixture corpus to `qqnd-game-server`. The client released default stays `baseline` until the server strategic release has passed production smoke; the server release candidate switches to `strategic` only after the client acceptance benchmark, fixture parity and server CI are green and the user approves deployment.
 
 **Tech Stack:** Browser ES modules, Node.js 22 test runner, Playwright, deterministic seeded simulator; server TypeScript 7, Node.js >=24, `tsx --test`, Fastify/WebSocket runtime.
 
@@ -14,6 +14,7 @@
 
 - Bot AI v1 is deterministic: identical normalized `BotView` must produce identical output; no `Math.random()` inside strategy decisions.
 - Strategy never receives exact opponent/partner hands or unrelated exchange selections.
+- `BotView.legalPlays` is derived by the existing rules engine from the bot's own hand plus public trick/wish state; strategy scores those options but does not recreate authoritative legality.
 - Client and server remain separate implementations but consume equivalent fixture content with matching fixture version/hash.
 - Autonomous bot bomb interrupts outside the bot's scheduled turn are out of scope for v1.
 - Typical 14-card `choosePlay` decisions should remain comfortably below 100 ms on CI-class Node hardware; no deterministic fixture/benchmark decision may exceed 250 ms without a documented optimization follow-up.
@@ -30,11 +31,11 @@
 
 ### Client (`quendae/tichu`)
 
-- Create `src/bot-strategy.js` — `BotView`, baseline/strategic policy functions, hand analysis and stable scoring/tie-breaks.
-- Modify `src/game.js` — delegate all bot decisions to the strategy module and maintain per-seat policy selection; game legality remains here.
+- Create `src/bot-strategy.js` — `BotView`, baseline/strategic policy functions, hand analysis and stable scoring/tie-breaks; no rules-engine import is required for play legality.
+- Modify `src/game.js` — produce legal play options with existing `possibleSelections`, build sanitized BotViews, delegate bot decisions to the strategy module and maintain per-seat policy selection.
 - Create `tests/bot-strategy.test.mjs` — unit scenarios, baseline locks, BotView boundary, no-cheat and timing tests.
 - Create `tests/fixtures/bot-strategy-v1.json` — canonical parity scenarios and expected normalized decisions.
-- Create `tests/bot-strategy-fixtures.test.mjs` — execute canonical fixtures against the client strategy and validate fixture metadata.
+- Create `tests/bot-strategy-fixtures.test.mjs` — execute canonical fixtures against the client strategy and validate fixture metadata/hash.
 - Modify `src/simulation/driver.js` — accept per-seat policies and expose round/match telemetry needed by benchmark aggregation.
 - Create `src/simulation/bot-benchmark.js` — paired seed runner and metric aggregation.
 - Create `tests/bot-benchmark.test.mjs` — seed swap, metric/report and smoke-gate tests.
@@ -46,8 +47,8 @@
 
 ### Server (`quendae/qqnd-game-server`)
 
-- Create `src/games/tichu/bot-strategy.ts` — TypeScript equivalent of client strategy contract/scoring.
-- Modify `src/games/tichu/engine.ts` — delegate `settleTichuBots` decisions through policy module and build sanitized BotView.
+- Create `src/games/tichu/bot-strategy.ts` — TypeScript equivalent of client strategy contract/scoring; no runtime import from `engine.ts`.
+- Modify `src/games/tichu/engine.ts` — compute legal options with the existing internal `possibleSelections`, build sanitized BotViews, and delegate `settleTichuBots` decisions through the policy module.
 - Create `test/fixtures/tichu-bot-strategy-v1.json` — verbatim copy of canonical client fixture.
 - Create `test/tichu-bot-strategy.test.ts` — fixtures, fixture hash/version, hidden-hand independence, strategic integration and timing.
 - Modify `test/tichu-engine.test.ts` — regression for strategic settling/takeover legality where engine integration is the relevant boundary.
@@ -64,9 +65,9 @@
 
 **Interfaces:**
 - Produces `BOT_POLICY_BASELINE = 'baseline'`, `BOT_POLICY_STRATEGIC = 'strategic'`.
-- Produces `buildBotView(state, seat)` returning only own hand, public state and legally known exchange cards.
+- Produces `buildBotView(state, seat, legalPlays = [])` returning only own hand, public state, legally known exchange cards and legal options already derived by the rules engine.
 - Produces profile-aware `decideGrand(view, profile)`, `decideTichu(view, profile)`, `chooseExchange(view, profile)`, `choosePlay(view, profile)`, `chooseWish(view, selectedCards, profile)`, `chooseDragonRecipient(view, profile)`.
-- `TichuGame` gains per-seat `botPolicies`; default remains `baseline` in this task.
+- `TichuGame` gains per-seat `botPolicies`; default remains `baseline` through Task 8.
 
 - [ ] **Step 1: Write baseline-lock and information-boundary tests**
 
@@ -96,7 +97,7 @@ test('baseline Grand keeps the legacy four-high-card threshold',()=>{
 test('BotView exposes counts but never exact opponent cards',()=>{
   const game=new TichuGame({autoSchedule:false});
   game.resetMatch();
-  const view=buildBotView(game.state,1);
+  const view=buildBotView(game.state,1,[]);
   assert.deepEqual(view.hand,game.state.hands[1]);
   assert.deepEqual(view.handCounts,game.state.hands.map(hand=>hand.length));
   assert.equal(JSON.stringify(view).includes(game.state.hands[0][0].id),false);
@@ -108,8 +109,6 @@ Also lock the current exchange mapping and cheapest-non-bomb play behavior with 
 
 - [ ] **Step 2: Run the targeted tests and verify RED**
 
-Run:
-
 ```bash
 node --test tests/bot-strategy.test.mjs
 ```
@@ -118,16 +117,14 @@ Expected: FAIL because `src/bot-strategy.js` / exported policy functions do not 
 
 - [ ] **Step 3: Implement the pure baseline module and sanitized view builder**
 
-Start `src/bot-strategy.js` with the stable contract:
+Start `src/bot-strategy.js` with a rules-independent contract:
 
 ```js
-import {possibleSelections} from './rules.js';
-
 export const BOT_POLICY_BASELINE='baseline';
 export const BOT_POLICY_STRATEGIC='strategic';
 export const DEFAULT_BOT_POLICY=BOT_POLICY_BASELINE;
 
-export function buildBotView(state,seat){
+export function buildBotView(state,seat,legalPlays=[]){
   const ownPass=state.passSelections?.[seat]||{};
   const exchangeResolved=state.phase!=='exchange'&&Object.keys(state.passSelections||{}).length>0;
   const received=exchangeResolved
@@ -145,6 +142,7 @@ export function buildBotView(state,seat){
     handCounts:state.hands.map(hand=>hand.length),
     table:structuredClone(state.table),
     lastPlay:structuredClone(state.lastPlay),
+    legalPlays:structuredClone(legalPlays),
     declarations:[...state.declarations],
     scores:[...state.scores],
     finished:[...state.finished],
@@ -157,15 +155,21 @@ export function buildBotView(state,seat){
 }
 ```
 
-Implement `baseline` branches by moving the existing formulas out of `TichuGame` without changing their outputs.
+Implement `baseline` branches by moving the existing formulas out of `TichuGame` without changing their outputs. `choosePlay` consumes `view.legalPlays` in its existing stable order.
 
 - [ ] **Step 4: Delegate `TichuGame` bot methods without changing behavior**
 
-Keep compatibility wrappers such as `botWantsGrand`, `botExchangeMap`, `botPlayChoice`, `botShouldTichu` and `botWish`, but make them call the strategy module using `this.botPolicies[seat]`. Add constructor/reset support for a four-entry policy array and normalize missing entries to `DEFAULT_BOT_POLICY`.
+Keep compatibility wrappers such as `botWantsGrand`, `botExchangeMap`, `botPlayChoice`, `botShouldTichu` and `botWish`, but make them call the strategy module using `this.botPolicies[seat]`. For a play decision, `game.js` computes:
+
+```js
+let legalPlays=possibleSelections(this.state.hands[seat],this.state.lastPlay,this.state.wish);
+if(this.state.wish&&legalPlays.some(option=>option.fulfills))legalPlays=legalPlays.filter(option=>option.fulfills);
+const view=buildBotView(this.state,seat,legalPlays);
+```
+
+Add constructor/reset support for a four-entry policy array and normalize missing entries to `DEFAULT_BOT_POLICY`.
 
 - [ ] **Step 5: Verify baseline parity**
-
-Run:
 
 ```bash
 node --test tests/bot-strategy.test.mjs tests/game.test.mjs tests/simulation-driver.test.mjs
@@ -215,7 +219,7 @@ Expected: strategic analysis/declaration assertions fail while baseline locks re
 
 - [ ] **Step 3: Implement bounded hand analysis**
 
-Enumerate useful legal structures from the bot's own hand only, score cards participating in structures, and compute a greedy estimated-exit count. Do not exhaustively recurse through the full game tree. Stable tie-breaks use normalized card IDs.
+Detect useful structures directly from the bot's own card ranks/suits, score cards participating in those structures, and compute a greedy estimated-exit count. Do not import the game engine or exhaustively recurse through the full game tree. Stable tie-breaks use normalized card IDs.
 
 - [ ] **Step 4: Implement declaration score constants**
 
@@ -294,7 +298,7 @@ git commit -m "feat: add strategic Tichu exchange and special-card choices"
 
 **Interfaces:**
 - `choosePlay(view, 'strategic') -> {type:'play',ids:string[],wishRank:number|null} | {type:'pass'}`.
-- The strategy chooses only among `possibleSelections(view.hand, view.lastPlay, view.wish)`; `TichuGame.playCards/pass` remains the final legality authority.
+- Strategy scores only `view.legalPlays`, already produced by `possibleSelections(view.hand, view.lastPlay, view.wish)` in `game.js`; `TichuGame.playCards/pass` remains the final legality authority.
 
 - [ ] **Step 1: Write RED tactical tests**
 
@@ -321,11 +325,11 @@ node --test tests/bot-strategy.test.mjs
 
 - [ ] **Step 3: Implement option scorer**
 
-Score every legal option with explicit components: cards shed, change in estimated exits, preservation cost, control-card spend, table point value, partner ownership, opponent hand-count threat, declarations and finish/double-victory pressure. Sort by score descending then stable normalized card-ID key.
+Score every entry in `view.legalPlays` with explicit components: cards shed, change in estimated exits, preservation cost, control-card spend, table point value, partner ownership, opponent hand-count threat, declarations and finish/double-victory pressure. Sort by score descending then stable normalized card-ID key.
 
 - [ ] **Step 4: Integrate strategic wrappers in `TichuGame`**
 
-`botPlayChoice` and bot Dragon handling call strategy using the configured seat policy. Keep `DEFAULT_BOT_POLICY='baseline'` until Task 6 acceptance gate passes.
+`botPlayChoice` and bot Dragon handling call strategy using the configured seat policy. Keep `DEFAULT_BOT_POLICY='baseline'` until the post-deployment production smoke in Task 8 has passed.
 
 - [ ] **Step 5: Run full client correctness suites**
 
@@ -352,44 +356,63 @@ git commit -m "feat: add team-aware Tichu play scoring"
 - Modify: `tests/bot-strategy.test.mjs`
 
 **Interfaces:**
-- Fixture root: `{ "fixtureVersion": 1, "scenarios": [...] }`.
+- Fixture root: `{ "fixtureVersion": 1, "scenarioHash": "<computed SHA-256>", "scenarios": [...] }`; `scenarioHash` is SHA-256 of `JSON.stringify(scenarios)` and is written by the exact command below, not hand-authored.
 - Each scenario: `{id, decision, profile, view, expected}`.
 - Normalized decisions sort object keys/ID arrays where ordering has no semantic meaning.
 
 - [ ] **Step 1: Create the 15 required canonical scenarios**
 
-Use the exact categories from spec section 10. Every fixture is a complete `BotView`; no raw authoritative `hands` collection is allowed.
+Use the exact categories from spec section 10. Every fixture is a complete `BotView`; no raw authoritative `hands` collection is allowed. Start with `"scenarioHash": ""`; Step 5 computes it automatically before commit.
 
 - [ ] **Step 2: Write the fixture runner test before wiring all scenarios**
 
 ```js
-const decisionFns={grand:decideGrand,tichu:decideTichu,exchange:chooseExchange,play:choosePlay,dragon:chooseDragonRecipient};
+const decisionFns={
+  grand:scenario=>decideGrand(scenario.view,scenario.profile),
+  tichu:scenario=>decideTichu(scenario.view,scenario.profile),
+  exchange:scenario=>chooseExchange(scenario.view,scenario.profile),
+  play:scenario=>choosePlay(scenario.view,scenario.profile),
+  wish:scenario=>chooseWish(scenario.view,scenario.selectedCards||[],scenario.profile),
+  dragon:scenario=>chooseDragonRecipient(scenario.view,scenario.profile),
+};
 for(const scenario of fixtures.scenarios){
   test(`fixture: ${scenario.id}`,()=>{
-    const actual=normalizeDecision(runScenario(scenario,decisionFns));
+    const actual=normalizeDecision(decisionFns[scenario.decision](scenario));
     assert.deepEqual(actual,scenario.expected);
   });
 }
 ```
 
+The test also recomputes SHA-256 of `fixtures.scenarios` and asserts it equals `fixtures.scenarioHash`.
+
 - [ ] **Step 3: Add explicit hidden-state permutation test at the engine boundary**
 
-Construct two full game states with identical bot hand/public fields but swap exact cards between the other three hands. Assert `buildBotView` deep equality and identical outputs for all applicable decision functions.
+Construct two full game states with identical bot hand/public fields but swap exact cards between the other three hands. Generate legal plays independently from the bot's own hand/public state for each source, build both BotViews, then assert deep equality and identical outputs for all applicable decision functions.
 
-- [ ] **Step 4: Verify fixtures and full unit suite**
+- [ ] **Step 4: Verify fixtures and full unit suite before hash finalization**
+
+```bash
+node --test tests/bot-strategy-fixtures.test.mjs tests/bot-strategy.test.mjs
+```
+
+Expected at this intermediate step: decision assertions pass; hash assertion fails while `scenarioHash` is empty.
+
+- [ ] **Step 5: Compute and write canonical fixture digest automatically**
+
+Run:
+
+```bash
+node --input-type=module -e "import fs from 'node:fs';import crypto from 'node:crypto';const p='tests/fixtures/bot-strategy-v1.json';const d=JSON.parse(fs.readFileSync(p,'utf8'));d.scenarioHash=crypto.createHash('sha256').update(JSON.stringify(d.scenarios)).digest('hex');fs.writeFileSync(p,JSON.stringify(d,null,2)+'\n');console.log(d.scenarioHash)"
+```
+
+Then rerun:
 
 ```bash
 node --test tests/bot-strategy-fixtures.test.mjs tests/bot-strategy.test.mjs
 npm test
 ```
 
-- [ ] **Step 5: Compute and record canonical fixture digest**
-
-Run this exact command and record its SHA-256 in the plan execution notes / later server parity test:
-
-```bash
-node -e "import fs from 'node:fs';import crypto from 'node:crypto';const d=JSON.parse(fs.readFileSync('tests/fixtures/bot-strategy-v1.json','utf8'));process.stdout.write(crypto.createHash('sha256').update(JSON.stringify(d.scenarios)).digest('hex')+'\n')"
-```
+Expected: hash and all scenarios pass.
 
 - [ ] **Step 6: Commit**
 
@@ -481,22 +504,15 @@ node scripts/benchmark-bots.mjs --pairs 200 --seed 20001 --validate
 
 Continue to `30001`, etc. for subsequent tuned iterations; never claim acceptance from a range already used for tuning.
 
-- [ ] **Step 9: Only after acceptance, switch client default to strategic**
+- [ ] **Step 9: Record acceptance but keep the released client default on baseline**
 
-Change `DEFAULT_BOT_POLICY` from `baseline` to `strategic`, update the default-policy tests, and rerun:
+Store the accepted report metrics in execution notes/PR body. Strategic is now eligible for server parity/rollout, but `DEFAULT_BOT_POLICY` remains `baseline` until Task 8 production smoke succeeds.
 
-```bash
-npm test
-npm run test:sim
-npm run test:bot-benchmark
-npm run test:e2e
-```
-
-- [ ] **Step 10: Commit benchmark/default changes**
+- [ ] **Step 10: Commit benchmark changes**
 
 ```bash
-git add src/simulation/driver.js src/simulation/bot-benchmark.js tests/bot-benchmark.test.mjs scripts/benchmark-bots.mjs package.json .gitignore .github/workflows/ci.yml src/bot-strategy.js
-git commit -m "feat: benchmark and enable strategic Tichu bots"
+git add src/simulation/driver.js src/simulation/bot-benchmark.js tests/bot-benchmark.test.mjs scripts/benchmark-bots.mjs package.json .gitignore .github/workflows/ci.yml
+git commit -m "feat: benchmark strategic Tichu bots"
 ```
 
 ---
@@ -513,6 +529,7 @@ git commit -m "feat: benchmark and enable strategic Tichu bots"
 
 **Interfaces:**
 - Server exports the same policy names and normalized decision shapes as client.
+- `buildBotView(state, seat, legalPlays)` lives in the strategy module but does not import `engine.ts` at runtime.
 - `settleTichuBots(input, botSeats, maxSteps = 128, botPolicies = {})` accepts optional seat policies; until Task 8 final switch, unspecified seats remain `baseline`.
 
 - [ ] **Step 1: Create server branch from current `main`**
@@ -525,11 +542,11 @@ git switch -c feature/tichu-bot-ai-v1
 
 - [ ] **Step 2: Copy the canonical fixture verbatim and verify digest before implementation**
 
-Copy client `tests/fixtures/bot-strategy-v1.json` to server `test/fixtures/tichu-bot-strategy-v1.json`. Run the same SHA-256 command against the server path and assert it equals the digest recorded in Task 5.
+Copy client `tests/fixtures/bot-strategy-v1.json` to server `test/fixtures/tichu-bot-strategy-v1.json`. Recompute SHA-256 of `scenarios` and assert it equals the copied `scenarioHash`; the entire JSON file should be byte-for-byte identical apart from path.
 
 - [ ] **Step 3: Write RED server fixture/boundary tests**
 
-Import the new strategy API from `../src/games/tichu/bot-strategy.js`; run every canonical fixture and add a full-state hidden-hand permutation test proving identical `buildBotView` and decision output.
+Import the new strategy API from `../src/games/tichu/bot-strategy.js`; run every canonical fixture and add a full-state hidden-hand permutation test proving identical `buildBotView` and decision output. Server fixture tests recompute `scenarioHash` exactly as client tests do.
 
 - [ ] **Step 4: Verify RED**
 
@@ -541,11 +558,11 @@ Expected: FAIL because server strategy module does not exist.
 
 - [ ] **Step 5: Implement TypeScript strategy with the same constants/ordering rules**
 
-Port the client functions and weights directly rather than reinterpreting them. Define explicit `BotView`, `BotPolicyName`, `BotDecision` types. Do not import browser/client code or add a new shared package.
+Port the client functions and weights directly rather than reinterpreting them. Define explicit `BotCard`, `BotPlayOption`, `BotView`, `BotPolicyName` and `BotDecision` structural types inside `bot-strategy.ts` (or type-only imports that erase at runtime). Do not runtime-import `engine.ts`, browser code, or a new shared package.
 
-- [ ] **Step 6: Delegate server bot settling to the strategy module**
+- [ ] **Step 6: Delegate server bot settling without an import cycle**
 
-Replace internal `botWantsGrand`, `botShouldTichu`, `botExchange`, `botWish` and `botAction` policy logic with wrappers around sanitized `buildBotView`. Keep reducer legality untouched.
+`engine.ts` keeps its existing `possibleSelections` implementation. Immediately before a bot play decision it computes/final-filters legal options using the authoritative hand/lastPlay/wish, then passes those options into `buildBotView(state,seat,legalPlays)`. Replace internal `botWantsGrand`, `botShouldTichu`, `botExchange`, `botWish` and `botAction` policy logic with wrappers around the strategy module. Reducer legality remains untouched.
 
 - [ ] **Step 7: Add settle/takeover integration regressions**
 
@@ -575,14 +592,15 @@ Open a PR to `qqnd-game-server/main` and require fresh PR CI green before Task 8
 **Files:**
 - Modify: `src/games/tichu/bot-strategy.ts` and/or `src/games/tichu/engine.ts` only where default selection is defined.
 - Modify: server tests for default expectation.
-- Client production test already exists at `tests/e2e-multiplayer/live-2h2b.spec.mjs`.
+- Client production tests already exist under `tests/e2e-multiplayer/`.
 
 **Interfaces:**
 - Unspecified authoritative server bot policy becomes `strategic` only after client acceptance benchmark and server parity CI are green.
+- Client default remains `baseline` during this server rollout so local release behavior does not change before authoritative bots are proven in production.
 
 - [ ] **Step 1: Switch server default from baseline to strategic with a failing-then-green default-policy test**
 
-Add a server test that calls `settleTichuBots` without `botPolicies` and verifies a canonical state takes the strategic fixture decision rather than the baseline decision. Run it RED, switch the default, then run it GREEN.
+Add a server test that calls `settleTichuBots` without `botPolicies` and verifies a canonical state takes the strategic fixture decision rather than the baseline decision. Run it RED, switch the server default, then run it GREEN.
 
 - [ ] **Step 2: Run full server verification on the exact PR HEAD**
 
@@ -596,7 +614,7 @@ Require GitHub PR CI success on the same head SHA.
 
 - [ ] **Step 3: Stop for explicit merge approval**
 
-Report server PR URL, head SHA, fixture digest, typecheck/test/build status and client acceptance benchmark metrics. Do not merge until the user explicitly approves.
+Report server PR URL, head SHA, fixture version/hash, typecheck/test/build status and client acceptance benchmark metrics. Do not merge until the user explicitly approves.
 
 - [ ] **Step 4: After approval, merge and deploy**
 
@@ -630,14 +648,33 @@ Expected: bounded 2H+2B/reconnect passes; 4H/takeover smoke passes, including su
 
 ---
 
-### Task 9: Documentation, Final Verification and Client PR Handoff
+### Task 9: Client Default, Documentation, Final Verification and PR Handoff
 
 **Files:**
+- Modify: `src/bot-strategy.js`
+- Modify: `tests/bot-strategy.test.mjs`
 - Modify: `README.md`
 - Optionally modify: server `README.md` if authoritative bot docs are stale.
-- No new gameplay behavior in this task.
 
-- [ ] **Step 1: Update README from future tense to actual commands/results**
+- [ ] **Step 1: After production server smoke, switch released client default to strategic**
+
+First add/update the default-policy assertion so it fails while `DEFAULT_BOT_POLICY` is still `baseline`, then change:
+
+```js
+export const DEFAULT_BOT_POLICY=BOT_POLICY_STRATEGIC;
+```
+
+Run:
+
+```bash
+node --test tests/bot-strategy.test.mjs
+npm test
+npm run test:sim
+```
+
+Expected: default-policy assertion and regressions pass.
+
+- [ ] **Step 2: Update README from future tense to actual commands/results**
 
 Document:
 
@@ -649,7 +686,7 @@ npm run bot:benchmark:validate
 
 Describe baseline vs strategic, no-hidden-hand rule, artifact path, validation seed policy, authoritative server deployment requirement and the latest accepted validation report summary.
 
-- [ ] **Step 2: Fresh client verification on final HEAD**
+- [ ] **Step 3: Fresh client verification on final HEAD**
 
 Run:
 
@@ -661,17 +698,22 @@ npm run test:e2e
 npm run test:e2e:multiplayer
 ```
 
-Also reference the already-passed full 200-pair acceptance report and post-deployment `test:e2e:multiplayer:full` result; do not rerun the 400-match benchmark merely to change documentation unless gameplay/strategy code changed after acceptance.
+Also reference the already-passed full 200-pair acceptance report and post-deployment `test:e2e:multiplayer:full` result; do not rerun the 400-match benchmark merely because the default constant/documentation changed. Rerun validation only if strategy weights, decisions, legal-option generation, game rules or simulator semantics changed after acceptance.
 
-- [ ] **Step 3: Rebase/retarget stacked branch after PR #9 lands**
+- [ ] **Step 4: Rebase/retarget stacked branch after PR #9 lands**
 
 If PR #9 is already merged, rebase/fast-forward the Bot AI branch onto updated `main` without dropping Bot AI commits. If PR #9 is still open, keep Bot AI stacked and target its PR at `feature/multiplayer-e2e` until #9 lands; then retarget to `main` and require a new PR-triggered CI run.
 
-- [ ] **Step 4: Inspect final diff for scope/safety**
+- [ ] **Step 5: Inspect final diff for scope/safety**
 
-Confirm no fixture contains hidden authoritative opponent hands beyond complete synthetic test `BotView`s, no benchmark artifacts are tracked, no session tokens enter diagnostics, and default CI contains only the 10-pair benchmark smoke rather than the 200-pair validation job.
+Confirm no fixture contains hidden authoritative opponent hands beyond complete synthetic test `BotView`s, no benchmark artifacts are tracked, no session tokens enter diagnostics, no strategy runtime-imports the server engine, and default CI contains only the 10-pair benchmark smoke rather than the 200-pair validation job.
 
-- [ ] **Step 5: Open/update client PR and stop before merge**
+- [ ] **Step 6: Commit final client default/docs, open/update PR and stop before merge**
+
+```bash
+git add src/bot-strategy.js tests/bot-strategy.test.mjs README.md
+git commit -m "docs: enable and document strategic Tichu bots"
+```
 
 PR body must include:
 
