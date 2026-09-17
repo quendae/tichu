@@ -20,7 +20,7 @@ export function buildBotView(state,seat,{legalPlays=[]}={}){
     handCounts:(state.hands||[]).map(hand=>hand.length),
     table:clone(state.table||[]),
     lastPlay:clone(state.lastPlay),
-    legalPlays:clone(legalPlays||[]),
+    legalPlays:legalPlays||[],
     declarations:[...(state.declarations||[])],
     scores:[...(state.scores||[0,0])],
     roundScore:[...(state.roundScore||[0,0])],
