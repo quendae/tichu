@@ -92,6 +92,17 @@ test('BotView exposes own hand, public counts and own sent exchange only',()=>{
   assert.equal(serialized.includes('sword-7'),false);
 });
 
+test('BotView hands legal options through without deep-copying or mutating them',()=>{
+  const state=baseState();
+  const legalPlays=possibleSelections(state.hands[1],state.lastPlay,state.wish);
+  const snapshot=structuredClone(legalPlays);
+  const view=buildBotView(state,1,{legalPlays});
+  assert.equal(view.legalPlays,legalPlays);
+  assert.equal(view.legalPlays[0],legalPlays[0]);
+  choosePlay(view,BOT_POLICY_BASELINE);
+  assert.deepEqual(legalPlays,snapshot);
+});
+
 test('baseline exchange preserves the current client mapping',()=>{
   const state=baseState();
   state.phase='exchange';
