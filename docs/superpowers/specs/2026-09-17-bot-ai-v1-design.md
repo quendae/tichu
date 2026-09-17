@@ -4,7 +4,8 @@
 **Client repo:** `quendae/tichu`  
 **Server repo:** `quendae/qqnd-game-server`  
 **Client branch:** `feature/bot-ai-v1`  
-**Depends on:** `quendae/tichu#9` (`feature/multiplayer-e2e`) and deployed server Dog/discarded fix `5f2fa7845831a58d610bf649241dfdad5f354f79`
+**Stacked on:** `quendae/tichu#9` (`feature/multiplayer-e2e`)  
+**Server prerequisite already deployed:** Dog/discarded fix `5f2fa7845831a58d610bf649241dfdad5f354f79`
 
 ## 1. Goal
 
@@ -12,9 +13,11 @@ Replace the current minimal Tichu bot policy with a deterministic, team-aware he
 
 Bot AI v1 must improve both local/offline bots and authoritative multiplayer bots. The browser and server implementations must use the same decision contract, pass the same scenario fixtures, and remain behaviorally aligned.
 
-The existing simple policy is retained as `baseline` for comparison. The new default policy is `strategic` after it passes the benchmark and rollout gates in this document.
+The existing simple policy is retained as `baseline` for comparison. The new default policy becomes `strategic` only after it passes the benchmark, parity, regression and production rollout gates in this document.
 
 Bot AI v1 is intentionally heuristic. Monte Carlo search / hidden-state rollouts are deferred to a later Bot AI v2.
+
+The client branch is stacked on PR #9. Bot AI work must not be merged to `main` before PR #9 is merged or the Bot AI branch is rebased onto an equivalent `main` containing that work.
 
 ## 2. Current baseline
 
@@ -62,7 +65,7 @@ Two named profiles exist:
 - `baseline` — frozen behavior matching the current bot policy closely enough to provide a stable comparison target.
 - `strategic` — Bot AI v1.
 
-Local games and authoritative server bots switch to `strategic` only after the benchmark gate is satisfied.
+Local games and authoritative server bots switch to `strategic` only after the acceptance gates are satisfied.
 
 The deterministic simulator can assign a profile per seat/team so `strategic` and `baseline` can play one another in the same match.
 
@@ -73,7 +76,7 @@ Strategy does not receive the raw authoritative game state.
 `BotView` contains only information available to that bot:
 
 - bot seat and partner seat;
-- bot's own exact hand;
+- bot's own exact current hand;
 - public table / current trick and last play;
 - public hand counts of all seats;
 - public declarations (Tichu / Grand Tichu);
@@ -82,21 +85,27 @@ Strategy does not receive the raw authoritative game state.
 - public wish;
 - public cards already played/discarded when needed for inference;
 - public log-derived facts only where those facts cannot reveal private state;
-- cards the bot itself sent during exchange;
-- cards the bot itself received during exchange.
+- IDs of cards that this bot itself sent during the current round's exchange, derived only from its own exchange map.
 
-It must not contain:
+Cards received in exchange do not require separate memory because they become part of the bot's own exact hand.
+
+`BotView` must not contain:
 
 - exact opponent or partner hands;
-- hidden exchange selections belonging to other players;
+- exchange selections belonging to other players;
 - hidden captured cards if the normal player view does not expose them;
 - server session/resume credentials or unrelated multiplayer metadata.
 
+The authoritative engine may build `BotView` from its complete internal state, but the builder must select only the fields above. It must never pass the raw state object into strategy code.
+
 ### 3.4 No-cheat invariant
 
-For any two authoritative states that produce the same legal `BotView`, strategy output must be identical even when hidden opponent cards are permuted.
+For any two authoritative states that contain the same legal information for a bot, `buildBotView` must produce equivalent views and strategy output must be identical even when hidden opponent cards are permuted.
 
-Tests must explicitly create such paired states and verify identical decisions for Grand/Tichu, exchange, play, wish and Dragon recipient decisions where applicable.
+Tests must explicitly create such paired states and verify both:
+
+1. normalized `BotView` equality;
+2. identical Grand/Tichu, exchange, play, wish and Dragon-recipient decisions where applicable.
 
 ## 4. Hand analysis
 
@@ -114,13 +123,20 @@ Core features:
 - finishing potential: whether a legal sequence of short remaining exits appears plausible;
 - points at risk in the remaining hand.
 
-The evaluator must be deterministic. Equal scores use stable tie-breaks based on card IDs / stable option order, never `Math.random()`.
+The evaluator must be deterministic. Equal scores use stable tie-breaks based on normalized card IDs / stable option order, never `Math.random()`.
 
 ### 4.1 Estimated exits
 
 The exit estimator is heuristic, not a full solver. It should prefer decompositions that remove many cards while preserving bombs/control.
 
 For v1 it may use a bounded greedy/dynamic scoring pass over legal combinations rather than exhaustive search. The implementation must remain fast enough for browser play and server bot settling.
+
+Performance quality gate for the strategy layer on CI-class Node hardware:
+
+- typical 14-card `choosePlay` decisions should remain comfortably below 100 ms;
+- no deterministic fixture/benchmark decision should exceed 250 ms without a documented optimization follow-up.
+
+The benchmark records strategy decision timing so regressions are visible.
 
 ## 5. Grand Tichu and Tichu decisions
 
@@ -169,7 +185,7 @@ The scorer prefers giving opponents cards that:
 - reduce weak singleton burden;
 - do not break valuable structures;
 - have low control value;
-- do not obviously strengthen a dangerous opponent based only on public/known exchange information.
+- do not obviously strengthen a dangerous opponent based only on public information.
 
 ### 6.2 Partner support
 
@@ -184,7 +200,7 @@ Special cards receive explicit heuristics:
 - Phoenix is a flexible structure/control card and is expensive to give away.
 - Dragon is maximum single-card control but may be worth supporting a declared partner in strong cases.
 
-No exchange decision may depend on the exact hidden hands of other seats.
+No exchange decision may depend on the exact hidden hands or exchange selections of other seats.
 
 ## 7. Play strategy
 
@@ -209,7 +225,7 @@ When opening a trick, strategic AI generally prefers to:
 
 - remove awkward/weak holdings;
 - shed efficient multi-card combinations;
-- preserve Dragon/Phoenix/Aces unless the control is needed;
+- preserve Dragon/Phoenix/Aces unless control is needed;
 - use Dog when lead transfer to partner is strategically valuable;
 - avoid destroying a bomb merely to lead cheaply.
 
@@ -227,33 +243,34 @@ The penalty can be overcome when public information shows a clear reason, includ
 - the bot can immediately go out;
 - preventing an opponent double victory.
 
-### 7.3 Bombs
+### 7.3 Bomb management
 
 Bombs are valuable control assets, not forbidden moves.
 
-Strategic AI may spend a bomb for a large positive reason, especially:
+When the bot is the acting seat, `strategic` may spend a legal bomb for a large positive reason, especially:
 
 - the bomb immediately empties the bot's hand;
 - it stops an opponent Tichu/Grand Tichu attempt;
 - it prevents an opponent double victory;
 - it protects the bot's team from an imminent finish;
-- it captures or controls a high-value trick when the expected tactical gain clearly exceeds the preservation cost.
+- it captures or controls a high-value trick when the tactical gain clearly exceeds the preservation cost.
 
 Otherwise bombs receive a strong preservation penalty.
+
+**Bot-initiated out-of-turn bomb interrupts are explicitly not part of v1.** Humans may still use the game's existing out-of-turn bomb rule. Adding autonomous bot interrupts requires separate timing/arbitration design so a synchronous server bot does not unfairly pre-empt a human reaction window. This is a Bot AI v2 candidate.
 
 ## 8. Mah Jong wish
 
 Wish selection may use only legal knowledge:
 
 - bot's own remaining hand;
-- cards the bot itself gave away in exchange;
-- cards the bot itself received;
+- IDs/ranks of cards the bot itself sent away in exchange;
 - public played/discarded history;
 - public declarations and hand counts.
 
 The scorer prefers ranks that are strategically inconvenient for opponents based on known/public information while avoiding wishes the bot itself is likely to be forced to satisfy at a damaging moment.
 
-The algorithm must not infer from exact authoritative opponent hands.
+The algorithm must not infer from exact authoritative opponent hands or other players' exchange maps.
 
 ## 9. Dragon recipient
 
@@ -274,7 +291,9 @@ The JS and TS strategy implementations intentionally remain separate files to av
 
 They must nevertheless share an equivalent input/output contract and scenario suite.
 
-A checked-in fixture file contains compact scenarios with:
+Canonical fixture schema is defined in the client repo. The server repo receives a verbatim fixture copy with the same `fixtureVersion` and content hash recorded in its test. A fixture update is incomplete until both repos use the same version/hash.
+
+Each fixture contains:
 
 - normalized `BotView` input;
 - requested decision type;
@@ -292,13 +311,13 @@ At minimum fixtures cover:
 8. do not overtake a safely winning partner;
 9. overtake when an opponent with one card is an immediate threat;
 10. preserve Dragon/Phoenix when a cheaper sufficient move exists;
-11. spend a bomb to stop an opponent Tichu;
+11. spend a bomb to stop an opponent Tichu when it is the bot's legal turn to answer;
 12. spend a bomb to go out;
 13. choose a wish from legal known information;
 14. choose the safer Dragon recipient;
-15. same visible information + permuted hidden hands => identical decision.
+15. same visible information + permuted hidden hands => identical view and decision.
 
-Client and server tests consume equivalent fixture content and normalize result ordering before comparison.
+Client and server tests normalize result ordering before comparison.
 
 ## 11. Benchmark harness
 
@@ -309,41 +328,58 @@ The simulator gains per-seat/per-team policy selection.
 For every benchmark seed, play a paired comparison:
 
 - Match A: Team 0 `strategic`, Team 1 `baseline`.
-- Match B: same seed, team policies swapped.
+- Match B: same seed, Team 0 `baseline`, Team 1 `strategic`.
 
-A full developer benchmark uses **200 seed pairs / 400 matches** by default.
+Because bot decisions do not consume RNG, corresponding rounds use the same seeded shuffle sequence while both matches continue to that round. The team swap balances which seat-pair receives a particular deal.
 
-CI uses only a small benchmark smoke (approximately 10–20 seed pairs) for legality, determinism, reporting and runtime. CI does not fail merely because the small statistical sample has a losing strategic win rate.
+A full developer benchmark uses **200 seed pairs / 400 matches**.
 
-### 11.2 Metrics
+CI uses **10 seed pairs / 20 matches** for legality, determinism, reporting and runtime. CI does not fail merely because this small statistical sample has a losing strategic win rate.
+
+### 11.2 Development and validation seed ranges
+
+To reduce tuning to a single known range:
+
+- iterative development/diagnostics may use seed pairs beginning at `1`;
+- the first acceptance benchmark uses a separate 200-pair validation range beginning at `10001`;
+- if strategy is changed after inspecting a failed acceptance range, the next acceptance run moves to the next predefined block (for example `20001`, then `30001`) rather than repeatedly tuning against the same 200 pairs.
+
+The report always records base seed, pair count, engine version and git SHA.
+
+### 11.3 Metrics
 
 Collect at least:
 
-- match wins by policy;
-- average final score differential;
+- individual match wins by policy across the 400 matches;
+- per-seed-pair aggregate score differential;
+- average strategic-minus-baseline final score differential per match;
 - rounds won / double victories;
 - normal Tichu calls, successes and failures;
 - Grand Tichu calls, successes and failures;
+- net declaration points by policy and per match;
 - average finish position by policy;
 - bomb opportunities/uses where measurable without hidden-information leakage;
 - average rounds and action count per match;
+- strategy decision timing;
 - invalid/rejected strategy decisions (must remain zero).
 
-Output human-readable text plus machine-readable JSON under a gitignored artifact directory, e.g. `artifacts/bot-benchmarks/`.
+Output human-readable text plus machine-readable JSON under a gitignored artifact directory such as `artifacts/bot-benchmarks/`.
 
-### 11.3 Success gate
+### 11.4 Success gate
 
 Bot AI v1 is accepted only if:
 
 1. all game invariants and existing regression tests remain green;
-2. all client/server parity fixtures pass;
+2. all client/server parity fixtures pass with matching fixture version/hash;
 3. no-cheat hidden-hand permutation tests pass;
-4. the 200-pair benchmark gives `strategic` a positive paired head-to-head record;
-5. the 200-pair benchmark gives `strategic` a positive average score differential;
-6. Tichu/Grand declaration success is not materially worse than baseline without an explained compensating gain;
-7. runtime remains practical for browser play and server bot settling.
+4. across the 400 validation matches, `strategic` wins more matches than `baseline` (ties are reported separately and do not count for either side);
+5. average `strategic - baseline` final score differential is positive;
+6. aggregate score differential across seed pairs is positive;
+7. invalid/rejected strategy decisions remain zero;
+8. declaration quality does not regress materially: net declaration points per match may not trail baseline by more than 5 points/match; normal/Grand success percentages are reported separately, and percentages based on fewer than 20 calls are marked inconclusive rather than used as a hard gate;
+9. strategy decision timing meets the performance guardrails from section 4.1.
 
-Do not tune acceptance thresholds to a single seed range. If the benchmark fails, inspect decision categories/metrics, adjust heuristics, and rerun a fresh predefined seed range.
+Do not tune acceptance thresholds to a particular result. If the validation benchmark fails, inspect category metrics, change heuristics, then use the next predefined validation seed block.
 
 ## 12. Tests and TDD
 
@@ -353,17 +389,19 @@ Client tests:
 
 - pure strategy unit tests;
 - fixture tests;
-- hidden-hand independence tests;
+- `buildBotView` information-boundary tests;
+- hidden-hand permutation tests;
 - deterministic tie-break tests;
 - baseline behavior lock tests;
 - simulator mixed-policy tests;
-- benchmark report tests.
+- benchmark report/seed-swap tests;
+- decision timing smoke.
 
 Server tests:
 
 - equivalent strategy scenarios in TypeScript;
-- fixture parity contract;
-- no hidden-hand dependency;
+- exact fixture version/hash contract;
+- `BotView` boundary and no-hidden-hand dependency;
 - integration through `settleTichuBots`;
 - bot takeover continues to use strategic policy legally.
 
@@ -372,32 +410,40 @@ Existing deterministic full-match invariants and multiplayer E2E remain mandator
 ## 13. Integration sequence
 
 1. Freeze/extract the client baseline policy without changing behavior.
-2. Build `BotView` and no-cheat tests.
+2. Build client `BotView` and no-cheat tests.
 3. Implement strategic hand analysis and declaration scoring in the client.
 4. Implement strategic exchange and play scoring in the client.
 5. Add benchmark harness and validate strategic vs baseline.
-6. Port the same strategy contract/fixtures to `qqnd-game-server`.
+6. Port the same strategy contract and exact fixture version/hash to `qqnd-game-server`.
 7. Run server typecheck/unit/build and client full suite.
-8. Deploy server branch only after its PR is approved/merged.
-9. Run production multiplayer smoke against `api.qqnd.fyi` to verify authoritative strategic bots.
-10. Switch defaults to `strategic` only after all acceptance gates are met.
+8. Open/review the server PR; do not deploy unmerged code.
+9. Merge/deploy the server only after explicit approval and green CI.
+10. Run production multiplayer smoke against `api.qqnd.fyi` to verify authoritative strategic bots and takeover.
+11. Switch local/server defaults to `strategic` only after all acceptance gates are met.
+12. Rebase/retarget the stacked client branch after PR #9 lands, then open the Bot AI client PR.
 
 ## 14. README / developer UX
 
-README must document:
+README documents the Bot AI direction immediately and must be updated again as commands become real during implementation.
+
+Final implementation documentation must include:
 
 - `baseline` vs `strategic` profiles;
 - no-hidden-hand-cheating rule;
-- local simulation/benchmark commands;
+- actual local simulation/benchmark commands;
+- benchmark seed/pair options;
 - where benchmark artifacts are written;
 - that authoritative online bots live in `qqnd-game-server` and require server deployment;
-- that the full benchmark is a developer/manual quality gate, while CI uses a smaller smoke.
+- that the 200-pair validation benchmark is a developer/manual quality gate, while CI uses a 10-pair smoke.
+
+Documentation must not claim an unimplemented command or strategic default is already available.
 
 ## 15. Out of scope for v1
 
 - Monte Carlo / determinization rollouts;
 - neural models / external LLM calls;
 - online self-learning or persistent player modeling;
+- autonomous bot bomb interrupts outside the bot's scheduled turn;
 - difficulty levels beyond selecting policy/threshold presets;
 - use of hidden authoritative opponent hands for stronger play;
 - perfect-information solving;
