@@ -1,0 +1,28 @@
+name: Bot AI Tuning Benchmark
+
+on:
+  push:
+    branches:
+      - feature/bot-ai-v1
+    paths:
+      - .github/workflows/bot-ai-tuning-benchmark.yml
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Run 50-pair tuning benchmark on used validation block
+        run: node scripts/benchmark-bots.mjs --pairs 50 --seed 10001 --git-sha "${{ github.sha }}"
+      - name: Upload tuning report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-ai-tuning-10001-50
+          path: artifacts/bot-benchmarks/**
+          if-no-files-found: error
