@@ -9,7 +9,7 @@ export const STRATEGIC_WEIGHTS=Object.freeze({
   structure:0.6,
   problemSingleton:-1.2,
   grandThreshold:40,
-  tichuThreshold:32,
+  tichuThreshold:45,
   maxScoreAdjustment:3,
 });
 
@@ -387,9 +387,14 @@ function strategicPlay(view){
   const winningSeat=view.table?.at(-1)?.seat;
   const opponents=[0,1,2,3].filter(seat=>teamOf(seat)!==teamOf(view.seat));
   const declarationActive=seat=>['tichu','grand'].includes(view.declarations?.[seat]);
-  const urgentOpponents=opponents.filter(seat=>(view.handCounts?.[seat]??99)<=2||declarationActive(seat));
+  const ownDeclaration=declarationActive(view.seat);
+  const urgentOpponents=opponents.filter(seat=>{
+    const count=view.handCounts?.[seat]??99;
+    return count<=2||(declarationActive(seat)&&count<=3);
+  });
+  const canEmptyHand=legal.some(option=>(option.cards?.length||0)===(view.hand?.length||0));
 
-  if(view.lastPlay&&winningSeat===view.partner&&!urgentOpponents.length&&!mustFulfillWish)return{type:'pass'};
+  if(view.lastPlay&&winningSeat===view.partner&&!urgentOpponents.length&&!mustFulfillWish&&!canEmptyHand&&!ownDeclaration)return{type:'pass'};
 
   const winnerIsOpponent=winningSeat!=null&&teamOf(winningSeat)!==teamOf(view.seat);
   const winnerOneCard=winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=1;
