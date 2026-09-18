@@ -4,16 +4,17 @@ import {formatBotBenchmarkReport,runBotBenchmark} from '../src/simulation/bot-be
 
 export function parseBenchmarkArgs(argv){
   const options={pairs:50,baseSeed:1,validate:false,quiet:false,gitSha:null};
+  const valueOptions=new Set(['--pairs','--seed','--git-sha']);
   for(let i=0;i<argv.length;i++){
     const arg=argv[i];
     if(arg==='--validate'){options.validate=true;continue;}
     if(arg==='--quiet'){options.quiet=true;continue;}
+    if(!valueOptions.has(arg))throw new Error(`Unknown option ${arg}`);
     const value=argv[++i];
     if(value===undefined)throw new Error(`Missing value for ${arg}`);
     if(arg==='--pairs')options.pairs=Number(value);
     else if(arg==='--seed')options.baseSeed=Number(value);
-    else if(arg==='--git-sha')options.gitSha=value;
-    else throw new Error(`Unknown option ${arg}`);
+    else options.gitSha=value;
   }
   if(!Number.isInteger(options.pairs)||options.pairs<1)throw new Error('--pairs must be a positive integer');
   if(!Number.isInteger(options.baseSeed))throw new Error('--seed must be an integer');
