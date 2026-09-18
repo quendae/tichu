@@ -115,6 +115,24 @@ test('strategic policy plays a bomb when it empties the hand',()=>{
   });
 });
 
+test('strategic policy spends its only legal bomb to stop a one-card opponent with active Tichu',()=>{
+  const lead=card('jade',14);
+  const bomb=[card('jade',9),card('sword',9),card('pagoda',9),card('star',9)];
+  const botView=view({
+    hand:[...bomb,card('jade',3)],
+    table:[tableEntry(1,[lead])],
+    lastPlay:tableEntry(1,[lead]).play,
+    legalPlays:[option(bomb,'bomb',9)],
+    handCounts:[5,1,6,7],
+    declarations:['none','tichu','none','none'],
+  });
+  assert.deepEqual(choosePlay(botView,BOT_POLICY_STRATEGIC),{
+    type:'play',
+    ids:['jade-9','sword-9','pagoda-9','star-9'],
+    wishRank:null,
+  });
+});
+
 test('strategic policy preserves a bomb when there is no urgent reason to spend it',()=>{
   const lead=card('jade',5);
   const eight=card('jade',8);
