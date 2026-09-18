@@ -1,0 +1,31 @@
+name: Bot AI Production Rollout Smoke
+
+on:
+  push:
+    branches:
+      - feature/bot-ai-v1
+    paths:
+      - .github/workflows/bot-ai-production-smoke.yml
+
+jobs:
+  production-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Run bounded production multiplayer smoke
+        run: npm run test:e2e:multiplayer
+      - name: Run full production multiplayer smoke
+        run: npm run test:e2e:multiplayer:full
+      - name: Upload rollout diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-ai-production-rollout-smoke
+          path: test-results-multiplayer/**
+          if-no-files-found: ignore
