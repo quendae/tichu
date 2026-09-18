@@ -75,6 +75,22 @@ test('strategic policy passes instead of overtaking a safely winning partner',()
   assert.notDeepEqual(choosePlay(botView,BOT_POLICY_BASELINE),{type:'pass'});
 });
 
+test('strategic policy must fulfill an active wish even when partner is winning',()=>{
+  const lead=card('jade',6);
+  const seven=card('sword',7);
+  const nine=card('pagoda',9);
+  const fulfilling={...option([seven]),fulfills:true};
+  const botView=view({
+    hand:[seven,nine],
+    table:[tableEntry(2,[lead])],
+    lastPlay:tableEntry(2,[lead]).play,
+    legalPlays:[fulfilling,option([nine])],
+    handCounts:[2,6,4,7],
+  });
+  botView.wish=7;
+  assert.deepEqual(choosePlay(botView,BOT_POLICY_STRATEGIC),{type:'play',ids:['sword-7'],wishRank:null});
+});
+
 test('strategic policy spends Dragon to stop a one-card opponent with active Tichu',()=>{
   const lead=card('jade',10);
   const jack=card('sword',11);
