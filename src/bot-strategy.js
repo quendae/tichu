@@ -362,6 +362,77 @@ function baselinePlay(view){
   return{type:'play',ids:chosen.cards.map(card=>card.id),wishRank};
 }
 
+function playControlCost(cards){
+  return cards.reduce((cost,card)=>{
+    if(card.special==='dragon')return cost+45;
+    if(card.special==='phoenix')return cost+35;
+    if(!card.special&&card.rank===14)return cost+14;
+    if(!card.special&&card.rank===13)return cost+7;
+    return cost;
+  },0);
+}
+
+function optionKey(option){
+  return stableCards(option.cards||[]).map(card=>card.id).join('|');
+}
+
+function strategicPlay(view){
+  if(view.currentPlayer!==view.seat)return{type:'pass'};
+  const options=[...(view.legalPlays||[])];
+  let legal=options;
+  if(view.wish&&options.some(option=>option.fulfills))legal=options.filter(option=>option.fulfills);
+  if(!legal.length)return{type:'pass'};
+
+  const winningSeat=view.table?.at(-1)?.seat;
+  const opponents=[0,1,2,3].filter(seat=>teamOf(seat)!==teamOf(view.seat));
+  const declarationActive=seat=>['tichu','grand'].includes(view.declarations?.[seat]);
+  const urgentOpponents=opponents.filter(seat=>(view.handCounts?.[seat]??99)<=2||declarationActive(seat));
+
+  if(view.lastPlay&&winningSeat===view.partner&&!urgentOpponents.length)return{type:'pass'};
+
+  const winnerIsOpponent=winningSeat!=null&&teamOf(winningSeat)!==teamOf(view.seat);
+  const winnerOneCard=winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=1;
+  const winnerDeclaration=winnerIsOpponent&&declarationActive(winningSeat);
+  const emergency=winnerOneCard&&winnerDeclaration;
+  const before=analyzeHand(view.hand||[]);
+
+  const scored=legal.map(option=>{
+    const cards=option.cards||[];
+    const ids=new Set(cards.map(card=>card.id));
+    const remaining=(view.hand||[]).filter(card=>!ids.has(card.id));
+    const after=analyzeHand(remaining);
+    const empties=remaining.length===0;
+    const bomb=option.play?.type==='bomb';
+    const controlCost=playControlCost(cards);
+    let score=cards.length*12+(before.estimatedExits-after.estimatedExits)*18;
+
+    if(!view.lastPlay)score+=cards.length*9;
+    if(empties)score+=1000;
+
+    score-=controlCost;
+    score-=Math.max(0,before.bombCount-after.bombCount-(bomb?1:0))*90;
+    score-=Math.max(0,before.longestPairRun-after.longestPairRun)*10;
+    score-=Math.max(0,before.longestStraight-after.longestStraight)*5;
+
+    if(bomb&&!empties&&!emergency)score-=70;
+    if(winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=2)score+=35;
+    if(winnerDeclaration)score+=25;
+
+    if(emergency){
+      const strongest=Math.max(0,...cards.map(card=>card.special==='dragon'?100:card.special==='phoenix'?85:(!card.special?Number(card.rank||0)*5:0)));
+      score+=strongest*2;
+      if(bomb)score+=25;
+    }
+
+    return{option,score,key:optionKey(option)};
+  }).sort((a,b)=>b.score-a.score||a.key.localeCompare(b.key));
+
+  const chosen=scored[0]?.option;
+  if(!chosen)return{type:'pass'};
+  const wishRank=chosen.cards?.some(card=>card.special==='mahjong')?strategicWish(view,chosen.cards):null;
+  return{type:'play',ids:chosen.cards.map(card=>card.id),wishRank};
+}
+
 function baselineDragonRecipient(view){
   return[0,1,2,3].find(seat=>teamOf(seat)!==teamOf(view.seat))??null;
 }
@@ -395,8 +466,7 @@ export function chooseWish(view,selectedCards=[],profile=DEFAULT_BOT_POLICY){
 }
 
 export function choosePlay(view,profile=DEFAULT_BOT_POLICY){
-  normalizeBotPolicy(profile);
-  return baselinePlay(view);
+  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicPlay(view):baselinePlay(view);
 }
 
 export function chooseDragonRecipient(view,profile=DEFAULT_BOT_POLICY){
