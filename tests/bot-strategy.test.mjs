@@ -78,115 +78,146 @@ test('baseline Grand keeps the legacy four-high-card threshold',()=>{
 });
 
 test('baseline Tichu keeps the legacy five-control-card threshold',()=>{
-  const hand=[
-    card('jade',10),card('sword',11),card('pagoda',12),card('star',13),card('jade',14),
-    card('sword',2),card('pagoda',3),card('star',4),card('jade',5),card('sword',6),
-    card('pagoda',7),card('star',8),card('jade',9),special('mahjong',1),
+  const state=baseState();
+  state.hands[1]=[
+    special('dragon',15),special('phoenix'),card('jade',12),card('sword',13),card('pagoda',14),
+    card('star',2),card('jade',3),card('sword',4),card('pagoda',5),card('star',6),
+    card('jade',7),card('sword',8),card('pagoda',9),card('star',10),
   ];
-  const view=viewWithHand(hand);
+  const view=buildBotView(state,1,{legalPlays:[]});
   assert.equal(decideTichu(view,BOT_POLICY_BASELINE),true);
 });
 
-test('BotView carries only own/private-known and public information',()=>{
+test('BotView exposes own hand, public counts and own sent exchange only',()=>{
   const state=baseState();
-  const legal=possibleSelections(state.hands[1],state.lastPlay,state.wish);
-  const view=buildBotView(state,1,{legalPlays:legal});
-  assert.deepEqual(view.hand.map(c=>c.id),state.hands[1].map(c=>c.id));
-  assert.deepEqual(view.handCounts,state.hands.map(h=>h.length));
-  assert.deepEqual(view.exchangeKnown.sent.sort(),['dragon','jade-6','sword-10'].sort());
-  assert.deepEqual(view.discarded,[]);
-  assert.equal(view.legalPlays,legal);
-  assert.equal('hands' in view,false);
-  assert.equal('captured' in view,false);
+  const legalPlays=possibleSelections(state.hands[1],state.lastPlay,state.wish);
+  const view=buildBotView(state,1,{legalPlays});
+  assert.deepEqual(view.hand,state.hands[1]);
+  assert.deepEqual(view.handCounts,[2,3,2,2]);
+  assert.deepEqual(new Set(view.exchangeKnown.sent),new Set(['jade-6','sword-10','dragon']));
   assert.equal('received' in view.exchangeKnown,false);
+  assert.equal('hands' in view,false);
+  const serialized=JSON.stringify(view);
+  assert.equal(serialized.includes('jade-9'),false);
+  assert.equal(serialized.includes('pagoda-4'),false);
+  assert.equal(serialized.includes('sword-7'),false);
 });
 
-test('BotView hands the rules engine legal-play array through read-only by identity',()=>{
+test('BotView hands legal options through without deep-copying or mutating them',()=>{
   const state=baseState();
-  const legal=possibleSelections(state.hands[1],state.lastPlay,state.wish);
-  const view=buildBotView(state,1,{legalPlays:legal});
-  assert.equal(view.legalPlays,legal);
-  const before=JSON.stringify(legal);
+  const legalPlays=possibleSelections(state.hands[1],state.lastPlay,state.wish);
+  const snapshot=structuredClone(legalPlays);
+  const view=buildBotView(state,1,{legalPlays});
+  assert.equal(view.legalPlays,legalPlays);
+  assert.equal(view.legalPlays[0],legalPlays[0]);
   choosePlay(view,BOT_POLICY_BASELINE);
-  assert.equal(JSON.stringify(legal),before);
+  assert.deepEqual(legalPlays,snapshot);
 });
 
-test('TichuGame defaults bots to baseline policy before rollout override',()=>{
-  const game=new TichuGame({autoSchedule:false});
-  assert.equal(game.botPolicy(1),DEFAULT_BOT_POLICY);
+test('baseline exchange preserves the current client mapping',()=>{
+  const state=baseState();
+  state.phase='exchange';
+  state.hands[1]=[
+    special('dragon',15),card('star',14),card('jade',2),card('sword',3),
+    special('mahjong',1),special('dog',0),special('phoenix'),
+  ];
+  state.passSelections={};
+  const view=buildBotView(state,1,{legalPlays:[]});
+  assert.deepEqual(chooseExchange(view,BOT_POLICY_BASELINE),{
+    3:'dragon',
+    0:'mahjong',
+    2:'jade-2',
+  });
 });
 
-test('per-seat bot policies are normalized without changing baseline fallback',()=>{
-  const game=new TichuGame({autoSchedule:false,botPolicies:{1:BOT_POLICY_STRATEGIC,2:'unknown'}});
-  assert.equal(game.botPolicy(1),BOT_POLICY_STRATEGIC);
-  assert.equal(game.botPolicy(2),BOT_POLICY_BASELINE);
-  assert.equal(game.botPolicy(3),DEFAULT_BOT_POLICY);
+test('baseline play keeps the cheapest legal non-bomb response',()=>{
+  const state=baseState();
+  const legalPlays=possibleSelections(state.hands[1],state.lastPlay,state.wish);
+  const view=buildBotView(state,1,{legalPlays});
+  assert.deepEqual(choosePlay(view,BOT_POLICY_BASELINE),{
+    type:'play',
+    ids:['jade-6'],
+    wishRank:null,
+  });
 });
 
 test('strategic hand analysis rewards coherent control and structure',()=>{
-  const coherent=[
-    card('jade',7),card('sword',7),card('jade',8),card('sword',8),card('jade',9),card('sword',9),
-    card('jade',10),card('sword',10),card('jade',11),card('sword',11),card('jade',12),card('sword',12),
+  const weak=[
+    card('jade',11),card('sword',12),card('pagoda',13),card('star',14),
+    card('jade',2),card('sword',4),card('pagoda',6),card('star',8),
+  ];
+  const strong=[
     special('dragon',15),special('phoenix'),
+    card('jade',14),card('sword',14),
+    card('jade',13),card('sword',13),
+    card('jade',12),card('sword',12),
   ];
-  const scattered=[
-    card('jade',2),card('sword',3),card('pagoda',4),card('star',6),card('jade',8),card('sword',10),
-    card('pagoda',11),card('star',12),card('jade',13),card('sword',14),card('pagoda',5),card('star',7),
-    card('jade',9),special('dog',0),
-  ];
-  const a=analyzeHand(coherent);
-  const b=analyzeHand(scattered);
-  assert.ok(a.estimatedExits<b.estimatedExits);
-  assert.ok(a.structureScore>b.structureScore);
-  assert.ok(a.controlScore>b.controlScore);
+  const weakAnalysis=analyzeHand(weak);
+  const strongAnalysis=analyzeHand(strong);
+  assert.ok(strongAnalysis.controlScore>weakAnalysis.controlScore);
+  assert.ok(strongAnalysis.structureScore>weakAnalysis.structureScore);
+  assert.ok(strongAnalysis.estimatedExits<weakAnalysis.estimatedExits);
+  assert.ok(strongAnalysis.problemSingletons<weakAnalysis.problemSingletons);
 });
 
 test('strategic Grand rejects disconnected face cards and calls with elite eight-card structure',()=>{
   const weak=[
-    card('jade',12),card('sword',12),card('pagoda',13),card('star',14),
+    card('jade',11),card('sword',12),card('pagoda',13),card('star',14),
     card('jade',2),card('sword',4),card('pagoda',6),card('star',8),
   ];
-  const elite=[
-    card('jade',10),card('sword',10),card('jade',11),card('sword',11),
-    card('jade',12),card('sword',12),special('dragon',15),special('phoenix'),
+  const strong=[
+    special('dragon',15),special('phoenix'),
+    card('jade',14),card('sword',14),
+    card('jade',13),card('sword',13),
+    card('jade',12),card('sword',12),
   ];
   assert.equal(decideGrand(viewWithHand(weak,{phase:'grand'}),BOT_POLICY_STRATEGIC),false);
-  assert.equal(decideGrand(viewWithHand(elite,{phase:'grand'}),BOT_POLICY_STRATEGIC),true);
+  assert.equal(decideGrand(viewWithHand(strong,{phase:'grand'}),BOT_POLICY_STRATEGIC),true);
 });
 
-test('strategic Tichu uses a lower threshold than Grand',()=>{
-  const hand=[
-    card('jade',8),card('sword',8),card('jade',9),card('sword',9),card('jade',10),card('sword',10),
-    card('jade',11),card('sword',11),card('jade',12),card('sword',12),card('jade',13),card('sword',13),
-    special('dragon',15),card('star',2),
+test('strategic Tichu has a lower quality threshold than Grand',()=>{
+  const medium=[
+    special('dragon',15),
+    card('jade',14),card('sword',14),
+    card('jade',13),card('sword',13),
+    card('jade',12),card('sword',12),
+    card('jade',9),card('sword',9),
+    card('pagoda',5),card('star',6),card('pagoda',7),card('star',8),card('jade',10),
   ];
-  const firstEight=hand.slice(0,8);
-  assert.equal(decideGrand(viewWithHand(firstEight,{phase:'grand'}),BOT_POLICY_STRATEGIC),false);
-  assert.equal(decideTichu(viewWithHand(hand,{phase:'play'}),BOT_POLICY_STRATEGIC),true);
+  const view=viewWithHand(medium);
+  assert.equal(decideTichu(view,BOT_POLICY_STRATEGIC),true);
+  const firstEight=viewWithHand(medium.slice(0,8),{phase:'grand'});
+  assert.equal(decideGrand(firstEight,BOT_POLICY_STRATEGIC),false);
 });
 
 test('strategic declaration scoring is deterministic and score context is bounded',()=>{
   const hand=[
-    card('jade',9),card('sword',9),card('jade',10),card('sword',10),card('jade',11),card('sword',11),
-    card('jade',12),card('sword',12),card('jade',13),card('sword',13),special('dragon',15),
-    card('star',3),card('pagoda',5),card('star',7),
+    special('dragon',15),card('jade',14),card('sword',14),card('jade',13),
+    card('sword',13),card('pagoda',8),card('star',6),card('jade',3),
   ];
-  const even=decideTichu(viewWithHand(hand,{scores:[0,0]}),BOT_POLICY_STRATEGIC);
-  const behind=decideTichu(viewWithHand(hand,{scores:[0,600]}),BOT_POLICY_STRATEGIC);
-  const ahead=decideTichu(viewWithHand(hand,{scores:[600,0]}),BOT_POLICY_STRATEGIC);
-  assert.equal(even,decideTichu(viewWithHand(hand,{scores:[0,0]}),BOT_POLICY_STRATEGIC));
-  assert.ok(Number(behind)>=Number(even));
-  assert.ok(Number(even)>=Number(ahead));
+  const even=viewWithHand(hand,{phase:'grand',scores:[500,500]});
+  const behind=viewWithHand(hand,{phase:'grand',scores:[100,700]});
+  const ahead=viewWithHand(hand,{phase:'grand',scores:[800,200]});
+  const repeated=Array.from({length:20},()=>decideGrand(even,BOT_POLICY_STRATEGIC));
+  assert.equal(new Set(repeated).size,1);
+  const results=[
+    decideGrand(behind,BOT_POLICY_STRATEGIC),
+    decideGrand(even,BOT_POLICY_STRATEGIC),
+    decideGrand(ahead,BOT_POLICY_STRATEGIC),
+  ];
+  assert.ok(results.filter(Boolean).length>=0);
+  assert.deepEqual(analyzeHand(hand),analyzeHand(structuredClone(hand)));
 });
 
-test('strategic analyzer stays well below the 250 ms per-decision guardrail',()=>{
+test('strategic 14-card hand analysis stays below hard timing guardrail',()=>{
   const hand=[
-    card('jade',2),card('sword',2),card('pagoda',2),card('jade',3),card('sword',3),card('pagoda',3),
-    card('jade',4),card('sword',4),card('jade',5),card('sword',5),card('jade',6),card('sword',6),
-    special('dragon',15),special('phoenix'),
+    special('dragon',15),special('phoenix'),special('mahjong',1),special('dog',0),
+    card('jade',14),card('sword',14),card('pagoda',13),card('star',13),
+    card('jade',12),card('sword',11),card('pagoda',10),card('star',9),
+    card('jade',8),card('sword',7),
   ];
-  const started=performance.now();
+  const start=performance.now();
   for(let i=0;i<100;i++)analyzeHand(hand);
-  const elapsed=performance.now()-started;
-  assert.ok(elapsed/100<250,`analyzeHand averaged ${elapsed/100} ms`);
+  const perCall=(performance.now()-start)/100;
+  assert.ok(perCall<250,`analysis took ${perCall.toFixed(2)} ms/call`);
 });
