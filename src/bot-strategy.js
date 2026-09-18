@@ -379,8 +379,9 @@ function optionKey(option){
 function strategicPlay(view){
   if(view.currentPlayer!==view.seat)return{type:'pass'};
   const options=[...(view.legalPlays||[])];
+  const mustFulfillWish=Boolean(view.wish&&options.some(option=>option.fulfills));
   let legal=options;
-  if(view.wish&&options.some(option=>option.fulfills))legal=options.filter(option=>option.fulfills);
+  if(mustFulfillWish)legal=options.filter(option=>option.fulfills);
   if(!legal.length)return{type:'pass'};
 
   const winningSeat=view.table?.at(-1)?.seat;
@@ -388,7 +389,7 @@ function strategicPlay(view){
   const declarationActive=seat=>['tichu','grand'].includes(view.declarations?.[seat]);
   const urgentOpponents=opponents.filter(seat=>(view.handCounts?.[seat]??99)<=2||declarationActive(seat));
 
-  if(view.lastPlay&&winningSeat===view.partner&&!urgentOpponents.length)return{type:'pass'};
+  if(view.lastPlay&&winningSeat===view.partner&&!urgentOpponents.length&&!mustFulfillWish)return{type:'pass'};
 
   const winnerIsOpponent=winningSeat!=null&&teamOf(winningSeat)!==teamOf(view.seat);
   const winnerOneCard=winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=1;
