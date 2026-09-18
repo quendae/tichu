@@ -1,6 +1,6 @@
 export const BOT_POLICY_BASELINE='baseline';
 export const BOT_POLICY_STRATEGIC='strategic';
-export const DEFAULT_BOT_POLICY=BOT_POLICY_BASELINE;
+export const DEFAULT_BOT_POLICY=BOT_POLICY_STRATEGIC;
 
 export const STRATEGIC_WEIGHTS=Object.freeze({
   exitSaving:2.5,
