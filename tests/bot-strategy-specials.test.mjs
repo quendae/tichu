@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  BOT_POLICY_BASELINE,
   BOT_POLICY_STRATEGIC,
   analyzeHand,
   chooseDragonRecipient,
@@ -36,29 +37,29 @@ function view(hand,{seat=0,declarations=['none','none','none','none'],handCounts
 
 function selectedIds(map){return new Set(Object.values(map));}
 
-test('strategic exchange does not break a four-of-a-kind bomb when junk is available',()=>{
-  const bomb=[card('jade',9),card('sword',9),card('pagoda',9),card('star',9)];
-  const hand=[...bomb,card('jade',2),card('sword',3),card('pagoda',4),card('star',6),card('jade',8),card('sword',10),card('pagoda',11),card('star',12),special('dragon',15),special('phoenix')];
-  const map=chooseExchange(view(hand),BOT_POLICY_STRATEGIC);
-  const selected=selectedIds(map);
-  assert.equal(Object.keys(map).length,3);
-  assert.equal(selected.size,3);
-  assert.ok(bomb.every(c=>!selected.has(c.id)));
+test('strategic exchange preserves a low four-of-a-kind bomb that baseline would split',()=>{
+  const bomb=[card('jade',2),card('sword',2),card('pagoda',2),card('star',2)];
+  const hand=[...bomb,card('jade',8),card('sword',9),card('pagoda',10),card('star',11),card('jade',12),card('sword',13),special('mahjong',1),special('dog',0),special('phoenix'),special('dragon',15)];
+  const baseline=selectedIds(chooseExchange(view(hand),BOT_POLICY_BASELINE));
+  const strategic=selectedIds(chooseExchange(view(hand),BOT_POLICY_STRATEGIC));
+  assert.ok(bomb.some(c=>baseline.has(c.id)),'baseline fixture must actually split the bomb');
+  assert.ok(bomb.every(c=>!strategic.has(c.id)));
 });
 
-test('strategic exchange preserves a long pair sequence when alternatives exist',()=>{
+test('strategic exchange preserves a low pair sequence that baseline would split',()=>{
   const steps=[
-    card('jade',10),card('sword',10),
-    card('jade',11),card('sword',11),
-    card('jade',12),card('sword',12),
-    card('jade',13),card('sword',13),
+    card('jade',2),card('sword',2),
+    card('jade',3),card('sword',3),
+    card('jade',4),card('sword',4),
+    card('jade',5),card('sword',5),
   ];
-  const hand=[...steps,card('pagoda',2),card('star',3),card('pagoda',5),card('star',7),special('dragon',15),special('dog',0)];
+  const hand=[...steps,card('pagoda',8),card('star',9),card('pagoda',11),card('star',13),special('dog',0),special('dragon',15)];
   const before=analyzeHand(hand);
-  const map=chooseExchange(view(hand),BOT_POLICY_STRATEGIC);
-  const selected=selectedIds(map);
-  assert.ok(steps.every(c=>!selected.has(c.id)));
-  const remaining=hand.filter(c=>!selected.has(c.id));
+  const baseline=selectedIds(chooseExchange(view(hand),BOT_POLICY_BASELINE));
+  const strategic=selectedIds(chooseExchange(view(hand),BOT_POLICY_STRATEGIC));
+  assert.ok(steps.some(c=>baseline.has(c.id)),'baseline fixture must actually split the pair sequence');
+  assert.ok(steps.every(c=>!strategic.has(c.id)));
+  const remaining=hand.filter(c=>!strategic.has(c.id));
   assert.ok(analyzeHand(remaining).longestPairRun>=before.longestPairRun);
 });
 
