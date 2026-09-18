@@ -1,0 +1,40 @@
+name: Apply Client Strategic Bot Default
+
+on:
+  push:
+    branches:
+      - feature/bot-ai-v1
+    paths:
+      - .github/workflows/apply-client-strategic-default.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/bot-ai-v1
+          fetch-depth: 0
+      - name: Switch client bot default to strategic
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('src/bot-strategy.js')
+          text = path.read_text()
+          old = "export const DEFAULT_BOT_POLICY=BOT_POLICY_BASELINE;"
+          new = "export const DEFAULT_BOT_POLICY=BOT_POLICY_STRATEGIC;"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one client default, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Commit strategic client default
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bot-strategy.js
+          git diff --cached --check
+          git commit -m "feat: enable strategic client bots by default"
+          git push origin HEAD:feature/bot-ai-v1
