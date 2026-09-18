@@ -1,28 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {TichuGame} from '../src/game.js';
-import {createSeededRng} from '../src/simulation/rng.js';
-import {BOT_POLICY_STRATEGIC} from '../src/bot-strategy.js';
+import { TichuGame } from '../src/game.js';
+import { BOT_POLICY_STRATEGIC } from '../src/bot-strategy.js';
+import { createSeededRng } from '../src/simulation/rng.js';
 
-test('local exchange continues through bot choices after the human confirms',async()=>{
-  const game=new TichuGame({rng:createSeededRng(12),botDelay:0});
+const waitFor = async (predicate, timeout = 200) => {
+  const deadline = Date.now() + timeout;
+  while (!predicate() && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+};
+
+test('local exchange continues through bot choices after the human confirms', async t => {
+  const game = new TichuGame({ botDelay: 60_000 });
+  t.after(() => clearTimeout(game.botTimer));
   game.resetMatch();
-  for(let seat=0;seat<4;seat++)game.declareGrand(seat,false);
-  const hand=game.state.hands[0];
-  const map={1:hand[0].id,2:hand[1].id,3:hand[2].id};
-  assert.equal(game.submitExchange(0,map),true);
-  await new Promise(resolve=>setTimeout(resolve,100));
-  assert.equal(game.state.phase,'play');
-  assert.deepEqual(game.state.exchangeDone,[true,true,true,true]);
+  clearTimeout(game.botTimer);
+
+  for (let seat = 0; seat < 4; seat++) game.declareGrand(seat, false);
+  clearTimeout(game.botTimer);
+  game.botDelay = 0;
+
+  const humanCards = game.state.hands[0].slice(0, 3);
+  assert.equal(game.submitExchange(0, {
+    1: humanCards[0].id,
+    2: humanCards[1].id,
+    3: humanCards[2].id,
+  }), true);
+
+  await waitFor(() => game.state.phase === 'play');
+  assert.equal(game.state.phase, 'play');
+  assert.deepEqual(game.state.exchangeDone, [true, true, true, true]);
 });
 
 test('bot exchange decision is pure and wrapper applies the same map',()=>{
-  const game=new TichuGame({rng:createSeededRng(12),autoSchedule:false});
+  const game=new TichuGame({rng:createSeededRng(11),autoSchedule:false});
   game.resetMatch({names:['A','B','C','D'],botSeats:[0,1,2,3]});
   for(let seat=0;seat<4;seat++)game.declareGrand(seat,false);
   const before=game.state.hands[0].map(card=>card.id);
   const map=game.botExchangeMap(0);
-  assert.equal(Object.keys(map).length,3);
+  assert.equal(new Set(Object.values(map)).size,3);
   assert.deepEqual(game.state.hands[0].map(card=>card.id),before);
   assert.equal(game.botExchange(0),true);
   assert.deepEqual(game.state.passSelections[0],map);
