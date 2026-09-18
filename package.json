@@ -9,6 +9,8 @@
     "sim": "node scripts/simulate.mjs",
     "replay": "node scripts/replay.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:multiplayer": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/live-2h2b.spec.mjs",
+    "test:e2e:multiplayer:full": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-4h.spec.mjs tests/e2e-multiplayer/takeover.spec.mjs",
     "serve": "node scripts/serve.mjs"
   },
   "devDependencies": {

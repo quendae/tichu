@@ -74,6 +74,22 @@ Rozgrywka online jest **server-authoritative**: klient wysyła wyłącznie akcje
 
 Obsługa Tichu po stronie serwera znajduje się w osobnym repozytorium `quendae/qqnd-game-server` i musi być wdrożona razem z klientem. Integracja zachowuje istniejący mechanizm sesji, pokojów, Quick Play, 60-sekundowego reconnect grace i przejęcia miejsca przez bota.
 
+### Multiplayer E2E
+
+Domyślny CI uruchamia ograniczony test produkcyjny przeciw `wss://api.qqnd.fyi/api/v1/ws`. Test tworzy unikalny prywatny pokój, dwa izolowane konteksty przeglądarki reprezentujące ludzi oraz dwa boty serwerowe, sprawdza prywatność rąk, synchronizację stanu i reconnect:
+
+```bash
+npm run test:e2e:multiplayer
+```
+
+Cięższy smoke z czterema ludźmi oraz przejęciem rozłączonego miejsca przez bota jest celowo ręczny, ponieważ produkcyjny reconnect grace trwa 60 sekund:
+
+```bash
+npm run test:e2e:multiplayer:full
+```
+
+Bridge testowy istnieje wyłącznie przy `?e2e=1` i udostępnia tylko stan już zredagowany dla bieżącego gracza oraz bezpieczny status bez tokenów sesji. Testy tworzą wyłącznie własne prywatne pokoje z unikalnymi nazwami i nie modyfikują cudzych pokojów. Po nieudanym przebiegu prywatny pokój lub sesja mogą pozostać do automatycznego cleanupu TTL po stronie serwera.
+
 ## Struktura
 
 - `index.html` — szkielet aplikacji i stołu;
@@ -83,9 +99,11 @@ Obsługa Tichu po stronie serwera znajduje się w osobnym repozytorium `quendae/
 - `src/simulation/` — seeded RNG, invarianty, replay i synchroniczny driver symulacji;
 - `scripts/simulate.mjs` / `scripts/replay.mjs` — narzędzia developerskie do stress testów i odtwarzania failure;
 - `src/multiplayer.js` — klient wspólnego QQND Game Server;
+- `src/e2e-bridge.js` — bezpieczny bridge developerski aktywowany wyłącznie przez `?e2e=1`;
 - `src/ui.js` — renderowanie i obsługa interakcji;
-- `tests/` — testy reguł, regresji, symulacji oraz Playwright dla UI.
+- `tests/` — testy reguł, regresji, symulacji oraz Playwright dla UI;
+- `tests/e2e-multiplayer/` — produkcyjne scenariusze multiplayer 2H+2B, 4H i bot takeover.
 
 ## Status
 
-Wersja lokalna ma pokrycie jednostkowe/regresyjne, deterministyczne pełne rozgrywki bot-vs-bot oraz Playwright na typowych rozdzielczościach telefonu, tabletu i desktopu. Następnym większym etapem po domknięciu tego harnessu jest pełne E2E multiplayer przez QQND Game Server, a potem dalsze ulepszanie strategii botów.
+Projekt ma pokrycie jednostkowe/regresyjne, deterministyczne pełne rozgrywki bot-vs-bot, responsywne Playwright E2E oraz produkcyjne testy multiplayer przez QQND Game Server. Bounded 2H+2B z reconnect działa w domyślnym CI, a cięższe 4H i 60-sekundowy bot takeover pozostają ręcznym smoke testem. Następnym etapem jest dalsze ulepszanie strategii botów i polish rozgrywki online.
