@@ -17,7 +17,8 @@ Przeglądarkowa wersja klasycznego **Tichu** dla czterech graczy. Projekt korzys
 - responsywny stół dla desktopu, tabletu i telefonu;
 - dziennik gry i skrócone zasady w interfejsie;
 - multiplayer QQND: pokoje publiczne/prywatne, kod pokoju, Quick Play, prywatne ręce, reconnect i bot takeover;
-- deterministyczny headless simulator pełnych meczów z invariantami i developerskim replayem błędów.
+- deterministyczny headless simulator pełnych meczów z invariantami i developerskim replayem błędów;
+- **Bot AI v1** z profilem `strategic`, parity client/server i benchmarkiem `strategic` vs `baseline`.
 
 ## Uruchomienie lokalne
 
@@ -62,25 +63,57 @@ Odtworzenie zapisanego przypadku:
 npm run replay -- artifacts/replays/failure-seed-738.json
 ```
 
-## Bot AI
+## Bot AI v1
 
-Aktualne boty są legalne i deterministyczne, ale ich strategia jest celowo prosta: Grand/Tichu opierają się głównie na liczbie mocnych kart, wymiana jest schematyczna, a podczas gry bot zwykle wybiera najtańszy legalny ruch i zachowuje bomby.
+Bot AI ma dwa deterministyczne profile:
 
-Na branchu `feature/bot-ai-v1` rozwijany jest **Bot AI v1** z dwoma profilami:
+- `baseline` — zamrożone starsze zachowanie, zachowane jako punkt odniesienia i regresyjny przeciwnik benchmarkowy;
+- `strategic` — domyślna strategia bota, uwzględniająca strukturę ręki, przewidywaną liczbę wyjść, kontrolę wysokimi kartami, bomby, grę partnera, deklaracje Tichu/Grand Tichu, zagrożenia końcówką, wymianę kart, Mah Jong wish i wybór odbiorcy Dragon.
 
-- `baseline` — zamrożone obecne zachowanie używane jako punkt odniesienia;
-- `strategic` — nowa deterministyczna strategia uwzględniająca strukturę ręki, liczbę przewidywanych wyjść, grę partnera, deklaracje Tichu/Grand Tichu, zagrożenie końcówką, użycie bomb, Mah Jong wish i wybór odbiorcy Dragon.
+Strategia jest zaimplementowana niezależnie w kliencie (`src/bot-strategy.js`) oraz w authoritative `qqnd-game-server`. Silnik reguł nadal jest jedynym źródłem legalnych ruchów — Bot AI tylko wybiera spośród przekazanych legalnych opcji.
 
-Najważniejszą zasadą jest **brak oszukiwania przez ukryty stan**. Strategiczny bot może korzystać tylko z własnej ręki, publicznego stanu gry i informacji, które sam poznał podczas wymiany. Przetasowanie ukrytych kart innych graczy przy zachowaniu tego samego widoku bota nie może zmienić jego decyzji.
+Najważniejszą zasadą jest **brak oszukiwania przez ukryty stan**. Bot może korzystać wyłącznie z własnej ręki, publicznego stanu gry oraz informacji, które sam poznał podczas wymiany. Canonical parity fixtures oraz test permutacji ukrytych rąk sprawdzają, że zmiana niewidocznych kart przeciwników nie wpływa na `BotView` ani decyzję strategiczną.
 
-Bot AI v1 będzie utrzymywany równolegle w kliencie i w authoritative `qqnd-game-server`. Obie implementacje będą sprawdzane tym samym logicznym zestawem parity fixtures, aby bot lokalny i bot online podejmowały równoważne decyzje.
+Canonical fixture contract:
 
-Jako quality gate powstaje benchmark `strategic` vs `baseline` na tych samych seedach z zamianą stron. Pełny developerski benchmark ma rozgrywać 200 par seedów / 400 meczów i raportować m.in. win rate, średnią różnicę punktów, skuteczność Tichu/Grand, double victories i średnią kolejność wychodzenia. CI będzie uruchamiać tylko mniejszy smoke benchmarku; pełny przebieg pozostanie ręcznym testem jakości.
+```text
+version: 1
+scenario SHA-256: d39c66aa58cda14ecbd8311f42de86329b90e4d42f0252e55b152f3244a263d0
+```
 
-Pełny zaakceptowany projekt znajduje się w:
+### Benchmark
+
+CI uruchamia krótki paired smoke benchmark:
+
+```bash
+npm run test:bot-benchmark
+```
+
+Pełny benchmark można uruchomić ręcznie:
+
+```bash
+npm run bot:benchmark -- --pairs 200 --seed 20001 --validate
+```
+
+Benchmark wykonuje dla każdego seeda dwa mecze ze zmianą stron `strategic ↔ baseline`, dzięki czemu wynik nie zależy od przypisania miejsc. Raport JSON i tekstowy trafiają do `artifacts/bot-benchmarks/`.
+
+Finalny acceptance Bot AI v1 został wykonany na wcześniej nietkniętym bloku seedów `20001..20200` — **200 par / 400 meczów**:
+
+- match wins `strategic / baseline / ties`: **261 / 139 / 0**;
+- pair wins: **140 / 59 / 1**;
+- średnia różnica punktów strategic minus baseline: **+288.07 / mecz**;
+- aggregate paired differential: **+115230**;
+- declaration net: **+26000 / -145200**;
+- średnia kolejność wyjścia: **2.486 / 2.514**;
+- rejected decisions: **0**;
+- decision timing avg / max: **6.033 / 217.640 ms**;
+- validation status: **PASS**.
+
+Projekt strategii i plan implementacji znajdują się w:
 
 ```text
 docs/superpowers/specs/2026-09-17-bot-ai-v1-design.md
+docs/superpowers/plans/2026-09-17-bot-ai-v1-implementation.md
 ```
 
 ## Multiplayer
@@ -93,7 +126,9 @@ wss://api.qqnd.fyi/api/v1/ws
 
 Rozgrywka online jest **server-authoritative**: klient wysyła wyłącznie akcje, a serwer tasuje, rozdaje, waliduje ruchy, prowadzi boty i wysyła każdemu graczowi jego prywatny widok stanu. Dzięki temu ręce przeciwników nie są przesyłane do przeglądarki jako jawne dane.
 
-Obsługa Tichu po stronie serwera znajduje się w osobnym repozytorium `quendae/qqnd-game-server` i musi być wdrożona razem z klientem. Integracja zachowuje istniejący mechanizm sesji, pokojów, Quick Play, 60-sekundowego reconnect grace i przejęcia miejsca przez bota.
+Obsługa Tichu po stronie serwera znajduje się w osobnym repozytorium `quendae/qqnd-game-server`. Server Bot AI v1 został zmergowany jako PR #11; authoritative boty używają domyślnie profilu `strategic`. `baseline` pozostaje dostępny do testów i porównań.
+
+Integracja zachowuje istniejący mechanizm sesji, pokojów, Quick Play, 60-sekundowego reconnect grace i przejęcia miejsca przez bota.
 
 ### Multiplayer E2E
 
@@ -109,6 +144,8 @@ Cięższy smoke z czterema ludźmi oraz przejęciem rozłączonego miejsca przez
 npm run test:e2e:multiplayer:full
 ```
 
+Po wdrożeniu strategicznego server defaultu oba rollout gates zostały wykonane przeciw produkcji: bounded **2H+2B** oraz full **4H + bot takeover** zakończyły się powodzeniem.
+
 Bridge testowy istnieje wyłącznie przy `?e2e=1` i udostępnia tylko stan już zredagowany dla bieżącego gracza oraz bezpieczny status bez tokenów sesji. Testy tworzą wyłącznie własne prywatne pokoje z unikalnymi nazwami i nie modyfikują cudzych pokojów. Po nieudanym przebiegu prywatny pokój lub sesja mogą pozostać do automatycznego cleanupu TTL po stronie serwera.
 
 ## Struktura
@@ -116,15 +153,18 @@ Bridge testowy istnieje wyłącznie przy `?e2e=1` i udostępnia tylko stan już 
 - `index.html` — szkielet aplikacji i stołu;
 - `styles.css` — responsywna oprawa stołu i kart;
 - `src/rules.js` — klasyfikacja kombinacji, bomby, Phoenix, życzenia i punktacja;
-- `src/game.js` — lokalny przebieg rundy, wymiana, scoring i boty;
-- `src/simulation/` — seeded RNG, invarianty, replay i synchroniczny driver symulacji;
-- `scripts/simulate.mjs` / `scripts/replay.mjs` — narzędzia developerskie do stress testów i odtwarzania failure;
+- `src/game.js` — lokalny przebieg rundy, wymiana, scoring i integracja botów;
+- `src/bot-strategy.js` — profile `baseline` / `strategic`, analiza ręki i decyzje Bot AI;
+- `src/simulation/` — seeded RNG, invarianty, replay, synchroniczny driver i agregacja benchmarku;
+- `scripts/simulate.mjs` / `scripts/replay.mjs` — stress testy i odtwarzanie failure;
+- `scripts/benchmark-bots.mjs` — paired benchmark `strategic` vs `baseline` i raporty acceptance;
 - `src/multiplayer.js` — klient wspólnego QQND Game Server;
 - `src/e2e-bridge.js` — bezpieczny bridge developerski aktywowany wyłącznie przez `?e2e=1`;
 - `src/ui.js` — renderowanie i obsługa interakcji;
-- `tests/` — testy reguł, regresji, symulacji oraz Playwright dla UI;
+- `tests/fixtures/bot-strategy-v1.json` — canonical parity fixture corpus;
+- `tests/` — testy reguł, Bot AI, regresji, symulacji oraz Playwright dla UI;
 - `tests/e2e-multiplayer/` — produkcyjne scenariusze multiplayer 2H+2B, 4H i bot takeover.
 
 ## Status
 
-Projekt ma pokrycie jednostkowe/regresyjne, deterministyczne pełne rozgrywki bot-vs-bot, responsywne Playwright E2E oraz produkcyjne testy multiplayer przez QQND Game Server. Bounded 2H+2B z reconnect działa w domyślnym CI, a cięższe 4H i 60-sekundowy bot takeover pozostają ręcznym smoke testem. Aktualnym etapem rozwoju jest Bot AI v1: wydzielenie `baseline`, implementacja `strategic`, parity klient/serwer oraz benchmark strategic vs baseline przed przełączeniem authoritative botów na nową strategię.
+Bot AI v1 przeszedł pełny acceptance, parity client/server, no-cheat boundary, timing guardrail oraz produkcyjny rollout smoke. Profil `strategic` jest domyślny dla botów lokalnych i authoritative botów serwera, a `baseline` pozostaje zamrożonym profilem referencyjnym. Projekt nadal ma deterministyczne pełne symulacje, responsive Playwright E2E i produkcyjne testy multiplayer przez QQND Game Server.
