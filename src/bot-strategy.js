@@ -259,6 +259,53 @@ function baselineExchange(view){
   return map;
 }
 
+function exchangeCardStrength(card){
+  if(card.special==='dragon')return 100;
+  if(card.special==='phoenix')return 80;
+  if(card.special==='dog')return 20;
+  if(card.special==='mahjong')return 15;
+  return Number(card.rank||0);
+}
+
+function removalDamage(hand,card){
+  const before=analyzeHand(hand);
+  const after=analyzeHand(hand.filter(item=>item.id!==card.id));
+  return Math.max(0,before.bombCount-after.bombCount)*120+
+    Math.max(0,before.longestPairRun-after.longestPairRun)*30+
+    Math.max(0,before.longestStraight-after.longestStraight)*12+
+    Math.max(0,after.estimatedExits-before.estimatedExits)*20+
+    Math.max(0,before.structureScore-after.structureScore)*4;
+}
+
+function strategicExchange(view){
+  const hand=stableCards(view.hand||[]);
+  const partner=view.partner;
+  const enemies=[0,1,2,3].filter(target=>target!==view.seat&&target!==partner);
+  if(hand.length<3)return baselineExchange(view);
+
+  const partnerDeclared=['tichu','grand'].includes(view.declarations?.[partner]);
+  const partnerChoice=[...hand].sort((a,b)=>{
+    const aScore=exchangeCardStrength(a)*(partnerDeclared?2:1)-removalDamage(hand,a)*5;
+    const bScore=exchangeCardStrength(b)*(partnerDeclared?2:1)-removalDamage(hand,b)*5;
+    return bScore-aScore||String(a.id).localeCompare(String(b.id));
+  })[0];
+
+  const map={};
+  map[partner]=partnerChoice.id;
+  let remaining=hand.filter(card=>card.id!==partnerChoice.id);
+  for(const target of enemies){
+    const choice=[...remaining].sort((a,b)=>{
+      const aCost=removalDamage(remaining,a)*100+exchangeCardStrength(a);
+      const bCost=removalDamage(remaining,b)*100+exchangeCardStrength(b);
+      return aCost-bCost||String(a.id).localeCompare(String(b.id));
+    })[0];
+    if(!choice)break;
+    map[target]=choice.id;
+    remaining=remaining.filter(card=>card.id!==choice.id);
+  }
+  return Object.keys(map).length===3?map:baselineExchange(view);
+}
+
 function baselineWish(view,selectedCards=[]){
   const selected=new Set(selectedCards.map(card=>card.id));
   const counts=new Map();
@@ -266,6 +313,41 @@ function baselineWish(view,selectedCards=[]){
     if(!card.special&&!selected.has(card.id))counts.set(card.rank,(counts.get(card.rank)||0)+1);
   }
   return[...counts.entries()].sort((a,b)=>b[1]-a[1]||b[0]-a[0])[0]?.[0]||14;
+}
+
+function rankFromKnownCardId(id){
+  const match=String(id||'').match(/-(\d+)$/);
+  if(!match)return null;
+  const rank=Number(match[1]);
+  return rank>=2&&rank<=14?rank:null;
+}
+
+function publicRankCounts(view){
+  const counts=new Map();
+  const add=card=>{
+    if(!card?.special&&card?.rank>=2&&card.rank<=14)counts.set(card.rank,(counts.get(card.rank)||0)+1);
+  };
+  for(const entry of view.table||[])for(const card of entry.cards||[])add(card);
+  for(const card of view.discarded||[])add(card);
+  return counts;
+}
+
+function strategicWish(view,selectedCards=[]){
+  const selected=new Set(selectedCards.map(card=>card.id));
+  const ownCounts=new Map();
+  for(const card of view.hand||[]){
+    if(!card.special&&!selected.has(card.id))ownCounts.set(card.rank,(ownCounts.get(card.rank)||0)+1);
+  }
+  const sentCounts=new Map();
+  for(const id of view.exchangeKnown?.sent||[]){
+    const rank=rankFromKnownCardId(id);
+    if(rank!=null)sentCounts.set(rank,(sentCounts.get(rank)||0)+1);
+  }
+  const seen=publicRankCounts(view);
+  return Array.from({length:13},(_,index)=>index+2).sort((a,b)=>{
+    const score=rank=>(sentCounts.get(rank)||0)*20-(ownCounts.get(rank)||0)*6-(seen.get(rank)||0)*3+rank/100;
+    return score(b)-score(a)||b-a;
+  })[0]||14;
 }
 
 function baselinePlay(view){
@@ -284,6 +366,18 @@ function baselineDragonRecipient(view){
   return[0,1,2,3].find(seat=>teamOf(seat)!==teamOf(view.seat))??null;
 }
 
+function strategicDragonRecipient(view){
+  const opponents=[0,1,2,3].filter(seat=>teamOf(seat)!==teamOf(view.seat));
+  return opponents.sort((a,b)=>{
+    const score=seat=>{
+      const declaration=view.declarations?.[seat];
+      const declarationPenalty=declaration==='grand'?5:declaration==='tichu'?4:0;
+      return Number(view.handCounts?.[seat]||0)-declarationPenalty;
+    };
+    return score(b)-score(a)||a-b;
+  })[0]??null;
+}
+
 export function decideGrand(view,profile=DEFAULT_BOT_POLICY){
   return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicGrand(view):baselineGrand(view);
 }
@@ -293,13 +387,11 @@ export function decideTichu(view,profile=DEFAULT_BOT_POLICY){
 }
 
 export function chooseExchange(view,profile=DEFAULT_BOT_POLICY){
-  normalizeBotPolicy(profile);
-  return baselineExchange(view);
+  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicExchange(view):baselineExchange(view);
 }
 
 export function chooseWish(view,selectedCards=[],profile=DEFAULT_BOT_POLICY){
-  normalizeBotPolicy(profile);
-  return baselineWish(view,selectedCards);
+  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicWish(view,selectedCards):baselineWish(view,selectedCards);
 }
 
 export function choosePlay(view,profile=DEFAULT_BOT_POLICY){
@@ -308,6 +400,5 @@ export function choosePlay(view,profile=DEFAULT_BOT_POLICY){
 }
 
 export function chooseDragonRecipient(view,profile=DEFAULT_BOT_POLICY){
-  normalizeBotPolicy(profile);
-  return baselineDragonRecipient(view);
+  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicDragonRecipient(view):baselineDragonRecipient(view);
 }
