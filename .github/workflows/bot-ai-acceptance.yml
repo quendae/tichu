@@ -17,12 +17,12 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - name: Run 400-match Bot AI acceptance gate
-        run: npm run bot:benchmark:validate
+      - name: Run 400-match Bot AI acceptance gate on untouched seed block
+        run: node scripts/benchmark-bots.mjs --pairs 200 --seed 20001 --validate --git-sha "${{ github.sha }}"
       - name: Upload acceptance report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: bot-ai-acceptance-10001
+          name: bot-ai-acceptance-20001
           path: artifacts/bot-benchmarks/**
           if-no-files-found: error
