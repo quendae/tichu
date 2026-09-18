@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runBotBenchmark} from '../src/simulation/bot-benchmark.js';
+import {parseBenchmarkArgs} from '../scripts/benchmark-bots.mjs';
 
 const STRATEGIC='strategic';
 const BASELINE='baseline';
@@ -52,8 +53,7 @@ test('paired benchmark ties a seed pair when swapped score differentials cancel'
   let call=0;
   const matchRunner=input=>{
     call+=1;
-    const strategicTeam=input.botPolicies[0]===STRATEGIC?0:1;
-    const scores=call===1?[1050,950]:[1050,950];
+    const scores=[1050,950];
     return{
       ...fakeMatch(input),
       finalState:{scores,winnerTeam:0},
@@ -75,4 +75,20 @@ test('benchmark smoke rejects invalid strategic decisions independently of quali
   const result=runBotBenchmark({pairs:1,baseSeed:90,matchRunner,writeReports:false,validate:false});
   assert.equal(result.ok,false);
   assert.equal(result.rejectedDecisions,2);
+});
+
+test('benchmark CLI parses documented defaults and validation flags',()=>{
+  assert.deepEqual(parseBenchmarkArgs([]),{
+    pairs:50,
+    baseSeed:1,
+    validate:false,
+    quiet:false,
+    gitSha:null,
+  });
+  assert.deepEqual(
+    parseBenchmarkArgs(['--pairs','200','--seed','10001','--validate','--quiet','--git-sha','abc123']),
+    {pairs:200,baseSeed:10001,validate:true,quiet:true,gitSha:'abc123'},
+  );
+  assert.throws(()=>parseBenchmarkArgs(['--pairs','0']),/positive integer/i);
+  assert.throws(()=>parseBenchmarkArgs(['--unknown']),/unknown option/i);
 });
