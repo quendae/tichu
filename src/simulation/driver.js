@@ -1,4 +1,6 @@
+import { performance } from 'node:perf_hooks';
 import { TichuGame } from '../game.js';
+import { BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC } from '../bot-strategy.js';
 import { makeDeck } from '../rules.js';
 import { createSeededRng } from './rng.js';
 import { SimulationInvariantError,assertSimulationInvariants } from './invariants.js';
@@ -9,7 +11,44 @@ import {
 
 const DEFAULT_NAMES=['Bot A','Bot B','Bot C','Bot D'];
 const ALL_BOTS=[0,1,2,3];
+const VALID_BOT_POLICIES=new Set([BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC]);
 const expectedDeckIds=makeDeck().map(card=>card.id);
+
+function normalizeSimulationPolicies(botPolicies){
+  if(botPolicies==null)return[...ALL_BOTS].map(()=>BOT_POLICY_BASELINE);
+  if(!Array.isArray(botPolicies)||botPolicies.length!==4||botPolicies.some(profile=>!VALID_BOT_POLICIES.has(profile))){
+    throw new TypeError('botPolicies must contain exactly four valid policy names');
+  }
+  return[...botPolicies];
+}
+
+function roundTelemetrySnapshot(state,actionCount){
+  const finished=[...(state.finished||[])];
+  return{
+    round:state.round,
+    scores:[...(state.scores||[0,0])],
+    roundScore:[...(state.roundScore||[0,0])],
+    declarations:[...(state.declarations||[])],
+    finished,
+    doubleVictory:finished.length>=2&&finished[0]%2===finished[1]%2,
+    actionCount,
+  };
+}
+
+function createTelemetry(){
+  return{
+    rounds:[],
+    actionCount:0,
+    rejectedDecisions:0,
+    decisionTiming:{count:0,totalMs:0,maxMs:0},
+  };
+}
+
+function recordDecisionTiming(telemetry,elapsedMs){
+  telemetry.decisionTiming.count+=1;
+  telemetry.decisionTiming.totalMs+=elapsedMs;
+  telemetry.decisionTiming.maxMs=Math.max(telemetry.decisionTiming.maxMs,elapsedMs);
+}
 
 export function nextSimulationAction(game){
   const s=game.state;
@@ -66,27 +105,39 @@ export function applySimulationAction(game,action){
   if(!accepted)throw new Error(`Simulation action rejected: ${action.type} seat=${action.seat}`);
 }
 
-export function runDeterministicMatch({seed,stepLimit=10000,checkpointEvery=100,engineVersion='0.2.0',gitSha=null}={}){
-  const game=new TichuGame({rng:createSeededRng(seed),autoSchedule:false,botDelay:0});
-  game.resetMatch({names:DEFAULT_NAMES,botSeats:ALL_BOTS});
+export function runDeterministicMatch({seed,stepLimit=10000,checkpointEvery=100,engineVersion='0.2.0',gitSha=null,botPolicies=null}={}){
+  const policies=normalizeSimulationPolicies(botPolicies);
+  const metadata={engineVersion,gitSha,botPolicies:[...policies]};
+  const telemetry=createTelemetry();
+  const game=new TichuGame({rng:createSeededRng(seed),autoSchedule:false,botDelay:0,botPolicies:policies});
+  game.resetMatch({names:DEFAULT_NAMES,botSeats:ALL_BOTS,botPolicies:policies});
   const replay=createReplay({
     seed,engineVersion,gitSha,
-    config:{targetScore:1000,stepLimit,checkpointEvery},
+    config:{targetScore:1000,stepLimit,checkpointEvery,botPolicies:[...policies]},
     initialState:game.state,
   });
   let step=0;
   let action=null;
   let beforeState=null;
+  let roundStartedAtStep=0;
   const recentSummaries=[];
 
   try{
     assertSimulationInvariants(game.state,{expectedDeckIds});
     while(game.state.phase!=='match-end'){
       if(step>=stepLimit)throw new SimulationInvariantError('STEP_LIMIT',`Step limit ${stepLimit} reached`,{step});
+      const decisionPhase=game.state.phase==='grand'||game.state.phase==='exchange'||game.state.phase==='play';
+      const decisionStart=decisionPhase?performance.now():0;
       action=nextSimulationAction(game);
       beforeState=normalizeState(game.state);
-      applySimulationAction(game,action);
+      try{
+        applySimulationAction(game,action);
+      }catch(error){
+        if(String(error?.message||'').includes('rejected'))telemetry.rejectedDecisions+=1;
+        throw error;
+      }
       step+=1;
+      if(decisionPhase)recordDecisionTiming(telemetry,performance.now()-decisionStart);
 
       assertSimulationInvariants(game.state,{
         expectedDeckIds,
@@ -104,6 +155,11 @@ export function runDeterministicMatch({seed,stepLimit=10000,checkpointEvery=100,
         afterState:game.state,
       });
 
+      if((game.state.phase==='round-end'||game.state.phase==='match-end')&&beforeState.phase==='play'){
+        telemetry.rounds.push(roundTelemetrySnapshot(game.state,step-roundStartedAtStep));
+      }
+      if(action.type==='nextRound')roundStartedAtStep=step;
+
       if(checkpointEvery>0&&step%checkpointEvery===0)recordReplayCheckpoint(replay,step,game.state);
       recentSummaries.push(recorded.summaryAfter);
       if(recentSummaries.length>3)recentSummaries.shift();
@@ -111,9 +167,14 @@ export function runDeterministicMatch({seed,stepLimit=10000,checkpointEvery=100,
         throw new SimulationInvariantError('DEADLOCK','State did not advance for three transitions',{step,summary:recorded.summaryAfter});
       }
     }
-    return{ok:true,seed,steps:step,replay,finalState:normalizeState(game.state)};
+    telemetry.actionCount=step;
+    return{ok:true,seed,steps:step,replay,finalState:normalizeState(game.state),metadata,telemetry};
   }catch(error){
     const code=error instanceof SimulationInvariantError?error.code:'SIMULATION_ERROR';
+    if(code==='SIMULATION_ERROR'&&(/No simulation action|rejected/.test(String(error?.message||'')))){
+      telemetry.rejectedDecisions=Math.max(1,telemetry.rejectedDecisions);
+    }
+    telemetry.actionCount=step;
     recordReplayFailure(replay,{
       code,
       message:error.message,
@@ -123,7 +184,7 @@ export function runDeterministicMatch({seed,stepLimit=10000,checkpointEvery=100,
       beforeState,
       afterState:game.state,
     });
-    return{ok:false,seed,steps:step,replay,error};
+    return{ok:false,seed,steps:step,replay,error,metadata,telemetry};
   }
 }
 
@@ -187,8 +248,9 @@ function replayRecordedFailure(game,replay){
 export function replayDeterministicMatch(replay){
   try{
     validateReplayDocument(replay);
-    const game=new TichuGame({rng:createSeededRng(replay.seed),autoSchedule:false,botDelay:0});
-    game.resetMatch({names:DEFAULT_NAMES,botSeats:ALL_BOTS});
+    const policies=normalizeSimulationPolicies(replay.config?.botPolicies??null);
+    const game=new TichuGame({rng:createSeededRng(replay.seed),autoSchedule:false,botDelay:0,botPolicies:policies});
+    game.resetMatch({names:DEFAULT_NAMES,botSeats:ALL_BOTS,botPolicies:policies});
     const initialExpected=stateSummary(replay.initial.state);
     const initialActual=stateSummary(game.state);
     if(initialActual!==initialExpected){
@@ -213,11 +275,11 @@ export function replayDeterministicMatch(replay){
   }
 }
 
-export function runSimulationBatch({matches=100,baseSeed=1,stepLimit=10000,checkpointEvery=100,engineVersion='0.2.0',gitSha=null,onProgress=null}={}){
+export function runSimulationBatch({matches=100,baseSeed=1,stepLimit=10000,checkpointEvery=100,engineVersion='0.2.0',gitSha=null,onProgress=null,botPolicies=null}={}){
   let totalSteps=0;
   for(let index=0;index<matches;index++){
     const seed=baseSeed+index;
-    const result=runDeterministicMatch({seed,stepLimit,checkpointEvery,engineVersion,gitSha});
+    const result=runDeterministicMatch({seed,stepLimit,checkpointEvery,engineVersion,gitSha,botPolicies});
     if(!result.ok)return{ok:false,matchIndex:index,seed,result};
     totalSteps+=result.steps;
     onProgress?.({matchIndex:index,seed,steps:result.steps});
