@@ -43,6 +43,23 @@ test('batch runner completes ten deterministic matches',()=>{
   assert.ok(result.steps>0);
 });
 
+test('mixed-policy matches accept and record exact per-seat assignments',()=>{
+  const mixed=['strategic','baseline','strategic','baseline'];
+  const swapped=['baseline','strategic','baseline','strategic'];
+  const a=runDeterministicMatch({seed:311,stepLimit:10000,checkpointEvery:0,botPolicies:mixed});
+  const b=runDeterministicMatch({seed:311,stepLimit:10000,checkpointEvery:0,botPolicies:swapped});
+  assert.equal(a.ok,true,failureMessage(a));
+  assert.equal(b.ok,true,failureMessage(b));
+  assert.deepEqual(a.metadata?.botPolicies,mixed);
+  assert.deepEqual(b.metadata?.botPolicies,swapped);
+  assert.deepEqual(a.replay.config?.botPolicies,mixed);
+  assert.deepEqual(b.replay.config?.botPolicies,swapped);
+  assert.throws(
+    ()=>runDeterministicMatch({seed:1,botPolicies:['strategic','baseline']}),
+    /botPolicies.*four|four.*botPolicies/i,
+  );
+});
+
 test('simulation CLI parses deterministic batch options',()=>{
   assert.deepEqual(
     parseSimulationArgs(['--matches','250','--seed','500','--out','tmp/replays','--quiet']),

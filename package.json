@@ -6,6 +6,9 @@
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "test:sim": "node scripts/simulate.mjs --matches 20 --seed 1 --quiet",
+    "test:bot-benchmark": "node scripts/benchmark-bots.mjs --pairs 10 --seed 1 --quiet",
+    "bot:benchmark": "node scripts/benchmark-bots.mjs",
+    "bot:benchmark:validate": "node scripts/benchmark-bots.mjs --pairs 200 --seed 10001 --validate",
     "sim": "node scripts/simulate.mjs",
     "replay": "node scripts/replay.mjs",
     "test:e2e": "playwright test",

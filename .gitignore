@@ -2,4 +2,5 @@ node_modules/
 test-results/
 playwright-report/
 artifacts/replays/
+artifacts/bot-benchmarks/
 *.blend1

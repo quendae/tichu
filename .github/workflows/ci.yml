@@ -15,11 +15,13 @@ jobs:
       - run: npm install
       - run: npm test
       - run: npm run test:sim
+      - run: npm run test:bot-benchmark
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Live multiplayer E2E
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         run: npm run test:e2e:multiplayer
-      - name: Upload UI and multiplayer diagnostics
+      - name: Upload UI, multiplayer, and benchmark diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -27,4 +29,5 @@ jobs:
           path: |
             test-results/*.png
             test-results-multiplayer/**
+            artifacts/bot-benchmarks/**
           if-no-files-found: ignore

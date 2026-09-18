@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { TichuGame } from '../src/game.js';
+import { BOT_POLICY_STRATEGIC } from '../src/bot-strategy.js';
 import { createSeededRng } from '../src/simulation/rng.js';
 
 const waitFor = async (predicate, timeout = 200) => {
@@ -54,4 +55,47 @@ test('bot play decision is pure for the current player',()=>{
   const choice=game.botPlayChoice(seat);
   assert.ok(choice&&(choice.type==='pass'||choice.type==='play'));
   assert.deepEqual(game.state.hands[seat].map(card=>card.id),before);
+});
+
+test('bot turn resolves a Dragon trick with the winning bot strategic policy',()=>{
+  const game=new TichuGame({autoSchedule:false,botPolicies:[BOT_POLICY_STRATEGIC]});
+  const dragon={id:'dragon',suit:null,rank:15,special:'dragon'};
+  game.configurePlayers(['A','B','C','D'],[0,3],[BOT_POLICY_STRATEGIC]);
+  Object.assign(game.state,{
+    phase:'play',
+    currentPlayer:3,
+    trickLeader:0,
+    hands:[
+      [{id:'jade-2',suit:'jade',rank:2,special:null}],
+      [{id:'sword-3',suit:'sword',rank:3,special:null},{id:'sword-4',suit:'sword',rank:4,special:null}],
+      Array.from({length:5},(_,index)=>({id:`pagoda-${index+2}`,suit:'pagoda',rank:index+2,special:null})),
+      [
+        {id:'jade-3',suit:'jade',rank:3,special:null},
+        {id:'sword-4',suit:'sword',rank:4,special:null},
+        {id:'pagoda-5',suit:'pagoda',rank:5,special:null},
+        {id:'star-6',suit:'star',rank:6,special:null},
+        {id:'jade-7',suit:'jade',rank:7,special:null},
+        {id:'sword-8',suit:'sword',rank:8,special:null},
+        {id:'pagoda-9',suit:'pagoda',rank:9,special:null},
+        {id:'star-10',suit:'star',rank:10,special:null},
+      ],
+    ],
+    captured:[[],[],[],[]],
+    discarded:[],
+    finished:[],
+    table:[{seat:0,cards:[dragon],play:{type:'single',length:1,value:15,cards:[dragon],phoenixAs:null}}],
+    lastPlay:{type:'single',length:1,value:15,cards:[dragon],phoenixAs:null},
+    passes:2,
+    declarations:['none','none','none','none'],
+    wish:null,
+    selected:new Set(),
+    dragonRecipient:null,
+    pendingRoundEnd:false,
+    botSeats:[0,3],
+  });
+
+  assert.equal(game.botTurn(3),true);
+  assert.equal(game.state.dragonRecipient,null);
+  assert.equal(game.state.table.length,0);
+  assert.deepEqual(game.state.captured[3].map(card=>card.id),['dragon']);
 });
