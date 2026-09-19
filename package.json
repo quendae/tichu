@@ -15,7 +15,7 @@
     "test:e2e:multiplayer": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/live-2h2b.spec.mjs",
     "test:e2e:multiplayer:full": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-4h.spec.mjs tests/e2e-multiplayer/takeover.spec.mjs",
     "serve": "node scripts/serve.mjs",
-    "test:bot-v2": "node scripts/benchmark-bots.mjs --pairs 10 --seed 1 --quiet --reference strategic-v1",
+    "test:bot-v2": "node scripts/benchmark-bots.mjs --pairs 10 --seed 101 --quiet --reference strategic-v1",
     "bot:benchmark:v2": "node scripts/benchmark-bots.mjs --pairs 50 --seed 1 --reference strategic-v1"
   },
   "devDependencies": {
