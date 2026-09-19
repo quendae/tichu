@@ -1,0 +1,58 @@
+name: Bot AI v2 Apply
+
+on:
+  push:
+    branches:
+      - feature/bot-ai-v2
+    paths:
+      - .github/workflows/bot-ai-v2-apply.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/bot-ai-v2
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Add frozen v1 profile and bounded next-seat lookahead
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/bot-strategy.js')
+          s=p.read_text()
+          s=s.replace("export const BOT_POLICY_STRATEGIC='strategic';\nexport const DEFAULT_BOT_POLICY=BOT_POLICY_STRATEGIC;", "export const BOT_POLICY_STRATEGIC='strategic';\nexport const BOT_POLICY_STRATEGIC_V1='strategic-v1';\nexport const DEFAULT_BOT_POLICY=BOT_POLICY_STRATEGIC;")
+          s=s.replace("export function normalizeBotPolicy(profile){\n  return profile===BOT_POLICY_STRATEGIC?BOT_POLICY_STRATEGIC:BOT_POLICY_BASELINE;\n}", "export function normalizeBotPolicy(profile){\n  if(profile===BOT_POLICY_STRATEGIC)return BOT_POLICY_STRATEGIC;\n  if(profile===BOT_POLICY_STRATEGIC_V1)return BOT_POLICY_STRATEGIC_V1;\n  return BOT_POLICY_BASELINE;\n}\n\nconst isStrategicPolicy=profile=>normalizeBotPolicy(profile)!==BOT_POLICY_BASELINE;")
+          s=s.replace("function strategicPlay(view){", "function strategicPlay(view,{nextSeatLookahead=false}={}){")
+          needle="""  const winnerIsOpponent=winningSeat!=null&&teamOf(winningSeat)!==teamOf(view.seat);\n  const winnerOneCard=winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=1;\n"""
+          repl="""  const winnerIsOpponent=winningSeat!=null&&teamOf(winningSeat)!==teamOf(view.seat);\n  const activeFinished=new Set(view.finished||[]);\n  let nextSeat=view.seat;\n  do{nextSeat=(nextSeat+1)%4}while(activeFinished.has(nextSeat)&&nextSeat!==view.seat);\n  const nextSeatThreat=nextSeat!==view.seat&&teamOf(nextSeat)!==teamOf(view.seat)&&(view.handCounts?.[nextSeat]??99)<=1;\n  const winnerOneCard=winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=1;\n"""
+          if needle not in s: raise SystemExit('winner block not found')
+          s=s.replace(needle,repl)
+          needle="""    if(winnerDeclaration)score+=25;\n\n    if(emergency){\n"""
+          repl="""    if(winnerDeclaration)score+=25;\n    if(nextSeatLookahead&&nextSeatThreat){\n      const barrier=Number(option.play?.value||0);\n      score+=Math.max(0,barrier-10)*6;\n    }\n\n    if(emergency){\n"""
+          if needle not in s: raise SystemExit('score insertion point not found')
+          s=s.replace(needle,repl)
+          s=s.replace("return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicGrand(view):baselineGrand(view);", "return isStrategicPolicy(profile)?strategicGrand(view):baselineGrand(view);")
+          s=s.replace("return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicTichu(view):baselineTichu(view);", "return isStrategicPolicy(profile)?strategicTichu(view):baselineTichu(view);")
+          s=s.replace("return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicExchange(view):baselineExchange(view);", "return isStrategicPolicy(profile)?strategicExchange(view):baselineExchange(view);")
+          s=s.replace("return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicWish(view,selectedCards):baselineWish(view,selectedCards);", "return isStrategicPolicy(profile)?strategicWish(view,selectedCards):baselineWish(view,selectedCards);")
+          s=s.replace("return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicPlay(view):baselinePlay(view);", "const normalized=normalizeBotPolicy(profile);\n  if(normalized===BOT_POLICY_BASELINE)return baselinePlay(view);\n  return strategicPlay(view,{nextSeatLookahead:normalized===BOT_POLICY_STRATEGIC});")
+          s=s.replace("return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicDragonRecipient(view):baselineDragonRecipient(view);", "return isStrategicPolicy(profile)?strategicDragonRecipient(view):baselineDragonRecipient(view);")
+          p.write_text(s)
+          PY
+      - run: node --test tests/bot-strategy-tuning.test.mjs
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/bot-strategy.js
+          git commit -m "feat: add strategic v2 next-seat lookahead"
+          git push origin HEAD:feature/bot-ai-v2
