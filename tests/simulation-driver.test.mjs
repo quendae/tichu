@@ -60,6 +60,14 @@ test('mixed-policy matches accept and record exact per-seat assignments',()=>{
   );
 });
 
+test('simulator accepts frozen strategic-v1 as a legal comparison policy',()=>{
+  const policies=['strategic','strategic-v1','strategic','strategic-v1'];
+  const result=runDeterministicMatch({seed:41,stepLimit:1,checkpointEvery:0,botPolicies:policies});
+  assert.deepEqual(result.metadata?.botPolicies,policies);
+  assert.deepEqual(result.replay.config?.botPolicies,policies);
+  assert.equal(result.replay.failure?.code,'STEP_LIMIT');
+});
+
 test('simulation CLI parses deterministic batch options',()=>{
   assert.deepEqual(
     parseSimulationArgs(['--matches','250','--seed','500','--out','tmp/replays','--quiet']),
