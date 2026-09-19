@@ -1,6 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import { TichuGame } from '../game.js';
-import { BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC } from '../bot-strategy.js';
+import { BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC,BOT_POLICY_STRATEGIC_V1 } from '../bot-strategy.js';
 import { makeDeck } from '../rules.js';
 import { createSeededRng } from './rng.js';
 import { SimulationInvariantError,assertSimulationInvariants } from './invariants.js';
@@ -11,7 +11,7 @@ import {
 
 const DEFAULT_NAMES=['Bot A','Bot B','Bot C','Bot D'];
 const ALL_BOTS=[0,1,2,3];
-const VALID_BOT_POLICIES=new Set([BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC]);
+const VALID_BOT_POLICIES=new Set([BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC,BOT_POLICY_STRATEGIC_V1]);
 const expectedDeckIds=makeDeck().map(card=>card.id);
 
 function normalizeSimulationPolicies(botPolicies){
@@ -42,6 +42,7 @@ function createTelemetry(){
     rejectedDecisions:0,
     teamPlay:{
       strategic:{partnerPasses:0,partnerOvertakes:0,opponentThreatStops:0,goOutPlays:0},
+      'strategic-v1':{partnerPasses:0,partnerOvertakes:0,opponentThreatStops:0,goOutPlays:0},
       baseline:{partnerPasses:0,partnerOvertakes:0,opponentThreatStops:0,goOutPlays:0},
     },
     decisionTiming:{count:0,totalMs:0,maxMs:0},
@@ -52,7 +53,7 @@ function recordTeamPlayDecision(telemetry,beforeState,action,policies){
   if(beforeState?.phase!=='play'||!Number.isInteger(action?.seat))return;
   if(action.type!=='pass'&&action.type!=='playCards')return;
   const seat=action.seat;
-  const policy=policies[seat]===BOT_POLICY_STRATEGIC?BOT_POLICY_STRATEGIC:BOT_POLICY_BASELINE;
+  const policy=VALID_BOT_POLICIES.has(policies[seat])?policies[seat]:BOT_POLICY_BASELINE;
   const bucket=telemetry.teamPlay[policy];
   const winner=beforeState.table?.at(-1)?.seat;
   const partner=(seat+2)%4;

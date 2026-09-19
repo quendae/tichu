@@ -1,10 +1,11 @@
 import {readFile} from 'node:fs/promises';
 import {pathToFileURL} from 'node:url';
+import {BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC_V1} from '../src/bot-strategy.js';
 import {formatBotBenchmarkReport,runBotBenchmark} from '../src/simulation/bot-benchmark.js';
 
 export function parseBenchmarkArgs(argv){
-  const options={pairs:50,baseSeed:1,validate:false,quiet:false,gitSha:null};
-  const valueOptions=new Set(['--pairs','--seed','--git-sha']);
+  const options={pairs:50,baseSeed:1,validate:false,quiet:false,gitSha:null,referencePolicy:BOT_POLICY_BASELINE};
+  const valueOptions=new Set(['--pairs','--seed','--git-sha','--reference']);
   for(let i=0;i<argv.length;i++){
     const arg=argv[i];
     if(arg==='--validate'){options.validate=true;continue;}
@@ -14,11 +15,13 @@ export function parseBenchmarkArgs(argv){
     if(value===undefined)throw new Error(`Missing value for ${arg}`);
     if(arg==='--pairs')options.pairs=Number(value);
     else if(arg==='--seed')options.baseSeed=Number(value);
-    else options.gitSha=value;
+    else if(arg==='--git-sha')options.gitSha=value;
+    else options.referencePolicy=value;
   }
   if(!Number.isInteger(options.pairs)||options.pairs<1)throw new Error('--pairs must be a positive integer');
   if(!Number.isInteger(options.baseSeed))throw new Error('--seed must be an integer');
   if(options.gitSha!==null&&(typeof options.gitSha!=='string'||!options.gitSha.trim()))throw new Error('--git-sha must be non-empty');
+  if(![BOT_POLICY_BASELINE,BOT_POLICY_STRATEGIC_V1].includes(options.referencePolicy))throw new Error('--reference must be baseline or strategic-v1');
   return options;
 }
 
@@ -37,6 +40,7 @@ export async function runBenchmarkCli(argv=process.argv.slice(2),env=process.env
     validate:options.validate,
     gitSha,
     engineVersion:pkg.version,
+    referencePolicy:options.referencePolicy,
     onProgress:options.quiet?null:({pairIndex,seed,differential})=>{
       if(pairIndex===0||(pairIndex+1)%10===0||pairIndex+1===options.pairs){
         console.log(`pair=${pairIndex+1}/${options.pairs} seed=${seed} differential=${differential}`);
