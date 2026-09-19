@@ -16,6 +16,7 @@ jobs:
       - run: npm test
       - run: npm run test:sim
       - run: npm run test:bot-benchmark
+      - run: npm run test:bot-v2
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - name: Live multiplayer E2E
