@@ -4,6 +4,7 @@ import {runBotBenchmark} from '../src/simulation/bot-benchmark.js';
 import {parseBenchmarkArgs} from '../scripts/benchmark-bots.mjs';
 
 const STRATEGIC='strategic';
+const STRATEGIC_V1='strategic-v1';
 const BASELINE='baseline';
 
 function fakeMatch({seed,botPolicies}){
@@ -22,6 +23,7 @@ function fakeMatch({seed,botPolicies}){
       finishPositions:{0:[1,3],1:[2,4]},
       teamPlay:{
         strategic:{partnerPasses:2,partnerOvertakes:1,opponentThreatStops:3,goOutPlays:1},
+        'strategic-v1':{partnerPasses:1,partnerOvertakes:3,opponentThreatStops:2,goOutPlays:0},
         baseline:{partnerPasses:1,partnerOvertakes:4,opponentThreatStops:1,goOutPlays:0},
       },
       actionCount:12,
@@ -63,6 +65,29 @@ test('benchmark aggregates team-play telemetry by policy',()=>{
   assert.match(report,/opponent threat stops strategic\/baseline: 6\/2/);
 });
 
+test('v2 benchmark can compare strategic directly against frozen strategic-v1',()=>{
+  const calls=[];
+  const matchRunner=input=>{
+    calls.push([...input.botPolicies]);
+    return fakeMatch(input);
+  };
+  const result=runBotBenchmark({
+    pairs:1,
+    baseSeed:52,
+    matchRunner,
+    writeReports:false,
+    referencePolicy:STRATEGIC_V1,
+  });
+  assert.deepEqual(calls,[
+    [STRATEGIC,STRATEGIC_V1,STRATEGIC,STRATEGIC_V1],
+    [STRATEGIC_V1,STRATEGIC,STRATEGIC_V1,STRATEGIC],
+  ]);
+  assert.equal(result.referencePolicy,STRATEGIC_V1);
+  assert.deepEqual(result.matchWins,{strategic:2,'strategic-v1':0,ties:0});
+  assert.deepEqual(result.teamPlay['strategic-v1'],{partnerPasses:2,partnerOvertakes:6,opponentThreatStops:4,goOutPlays:0});
+  assert.match(result.reportText,/strategic\/strategic-v1/);
+});
+
 test('paired benchmark ties a seed pair when swapped score differentials cancel',()=>{
   const matchRunner=input=>{
     const scores=[1050,950];
@@ -96,11 +121,13 @@ test('benchmark CLI parses documented defaults and validation flags',()=>{
     validate:false,
     quiet:false,
     gitSha:null,
+    referencePolicy:BASELINE,
   });
   assert.deepEqual(
-    parseBenchmarkArgs(['--pairs','200','--seed','10001','--validate','--quiet','--git-sha','abc123']),
-    {pairs:200,baseSeed:10001,validate:true,quiet:true,gitSha:'abc123'},
+    parseBenchmarkArgs(['--pairs','200','--seed','10001','--validate','--quiet','--git-sha','abc123','--reference','strategic-v1']),
+    {pairs:200,baseSeed:10001,validate:true,quiet:true,gitSha:'abc123',referencePolicy:STRATEGIC_V1},
   );
   assert.throws(()=>parseBenchmarkArgs(['--pairs','0']),/positive integer/i);
+  assert.throws(()=>parseBenchmarkArgs(['--reference','mystery']),/reference/i);
   assert.throws(()=>parseBenchmarkArgs(['--unknown']),/unknown option/i);
 });
