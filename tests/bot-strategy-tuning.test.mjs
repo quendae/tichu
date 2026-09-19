@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BOT_POLICY_STRATEGIC,
+  BOT_POLICY_STRATEGIC_V1,
   buildBotView,
   choosePlay,
   decideTichu,
@@ -102,4 +103,16 @@ test('distant opponent Tichu declaration alone does not force overtaking a safel
     declarations:['none','tichu','none','none'],
   });
   assert.deepEqual(choosePlay(view,BOT_POLICY_STRATEGIC),{type:'pass'});
+});
+
+test('strategic v2 raises the barrier for the next one-card opponent while v1 keeps the cheaper card',()=>{
+  const jack=card('sword',11);
+  const ace=card('pagoda',14);
+  const view=playView({
+    hand:[jack,ace],
+    legalPlays:[option([jack]),option([ace])],
+    handCounts:[2,1,4,7],
+  });
+  assert.deepEqual(choosePlay(view,BOT_POLICY_STRATEGIC_V1),{type:'play',ids:['sword-11'],wishRank:null});
+  assert.deepEqual(choosePlay(view,BOT_POLICY_STRATEGIC),{type:'play',ids:['pagoda-14'],wishRank:null});
 });
