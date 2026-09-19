@@ -40,8 +40,33 @@ function createTelemetry(){
     rounds:[],
     actionCount:0,
     rejectedDecisions:0,
+    teamPlay:{
+      strategic:{partnerPasses:0,partnerOvertakes:0,opponentThreatStops:0,goOutPlays:0},
+      baseline:{partnerPasses:0,partnerOvertakes:0,opponentThreatStops:0,goOutPlays:0},
+    },
     decisionTiming:{count:0,totalMs:0,maxMs:0},
   };
+}
+
+function recordTeamPlayDecision(telemetry,beforeState,action,policies){
+  if(beforeState?.phase!=='play'||!Number.isInteger(action?.seat))return;
+  if(action.type!=='pass'&&action.type!=='playCards')return;
+  const seat=action.seat;
+  const policy=policies[seat]===BOT_POLICY_STRATEGIC?BOT_POLICY_STRATEGIC:BOT_POLICY_BASELINE;
+  const bucket=telemetry.teamPlay[policy];
+  const winner=beforeState.table?.at(-1)?.seat;
+  const partner=(seat+2)%4;
+  const opponents=[0,1,2,3].filter(candidate=>candidate%2!==seat%2);
+  const urgentOpponent=opponents.some(candidate=>(beforeState.hands?.[candidate]?.length??99)<=2);
+  if(winner===partner){
+    if(action.type==='pass')bucket.partnerPasses+=1;
+    else bucket.partnerOvertakes+=1;
+  }
+  if(action.type==='playCards'&&urgentOpponent)bucket.opponentThreatStops+=1;
+  if(action.type==='playCards'){
+    const played=Array.isArray(action.payload?.ids)?action.payload.ids.length:0;
+    if(played>0&&played===(beforeState.hands?.[seat]?.length??-1))bucket.goOutPlays+=1;
+  }
 }
 
 function recordDecisionTiming(telemetry,elapsedMs){
@@ -137,6 +162,7 @@ export function runDeterministicMatch({seed,stepLimit=10000,checkpointEvery=100,
         throw error;
       }
       step+=1;
+      recordTeamPlayDecision(telemetry,beforeState,action,policies);
       if(decisionPhase)recordDecisionTiming(telemetry,performance.now()-decisionStart);
 
       assertSimulationInvariants(game.state,{
