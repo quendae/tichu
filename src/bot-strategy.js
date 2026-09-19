@@ -1,5 +1,6 @@
 export const BOT_POLICY_BASELINE='baseline';
 export const BOT_POLICY_STRATEGIC='strategic';
+export const BOT_POLICY_STRATEGIC_V1='strategic-v1';
 export const DEFAULT_BOT_POLICY=BOT_POLICY_STRATEGIC;
 
 export const STRATEGIC_WEIGHTS=Object.freeze({
@@ -19,8 +20,12 @@ const stableCards=cards=>[...cards].sort((a,b)=>String(a.id).localeCompare(Strin
 const rankOf=card=>card.special==='mahjong'?1:card.rank;
 
 export function normalizeBotPolicy(profile){
-  return profile===BOT_POLICY_STRATEGIC?BOT_POLICY_STRATEGIC:BOT_POLICY_BASELINE;
+  if(profile===BOT_POLICY_STRATEGIC)return BOT_POLICY_STRATEGIC;
+  if(profile===BOT_POLICY_STRATEGIC_V1)return BOT_POLICY_STRATEGIC_V1;
+  return BOT_POLICY_BASELINE;
 }
+
+const isStrategicPolicy=profile=>normalizeBotPolicy(profile)!==BOT_POLICY_BASELINE;
 
 export function buildBotView(state,seat,{legalPlays=[]}={}){
   const ownPass=state.passSelections?.[seat]||{};
@@ -376,7 +381,7 @@ function optionKey(option){
   return stableCards(option.cards||[]).map(card=>card.id).join('|');
 }
 
-function strategicPlay(view){
+function strategicPlay(view,{nextSeatLookahead=false}={}){
   if(view.currentPlayer!==view.seat)return{type:'pass'};
   const options=[...(view.legalPlays||[])];
   const mustFulfillWish=Boolean(view.wish&&options.some(option=>option.fulfills));
@@ -397,6 +402,10 @@ function strategicPlay(view){
   if(view.lastPlay&&winningSeat===view.partner&&!urgentOpponents.length&&!mustFulfillWish&&!canEmptyHand&&!ownDeclaration)return{type:'pass'};
 
   const winnerIsOpponent=winningSeat!=null&&teamOf(winningSeat)!==teamOf(view.seat);
+  const activeFinished=new Set(view.finished||[]);
+  let nextSeat=view.seat;
+  do{nextSeat=(nextSeat+1)%4}while(activeFinished.has(nextSeat)&&nextSeat!==view.seat);
+  const nextSeatThreat=nextSeat!==view.seat&&teamOf(nextSeat)!==teamOf(view.seat)&&(view.handCounts?.[nextSeat]??99)<=1;
   const winnerOneCard=winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=1;
   const winnerDeclaration=winnerIsOpponent&&declarationActive(winningSeat);
   const emergency=winnerOneCard&&winnerDeclaration;
@@ -423,6 +432,10 @@ function strategicPlay(view){
     if(bomb&&!empties&&!emergency)score-=70;
     if(winnerIsOpponent&&(view.handCounts?.[winningSeat]??99)<=2)score+=35;
     if(winnerDeclaration)score+=25;
+    if(nextSeatLookahead&&nextSeatThreat){
+      const barrier=Number(option.play?.value||0);
+      score+=Math.max(0,barrier-10)*6;
+    }
 
     if(emergency){
       const strongest=Math.max(0,...cards.map(card=>card.special==='dragon'?100:card.special==='phoenix'?85:(!card.special?Number(card.rank||0)*5:0)));
@@ -456,25 +469,27 @@ function strategicDragonRecipient(view){
 }
 
 export function decideGrand(view,profile=DEFAULT_BOT_POLICY){
-  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicGrand(view):baselineGrand(view);
+  return isStrategicPolicy(profile)?strategicGrand(view):baselineGrand(view);
 }
 
 export function decideTichu(view,profile=DEFAULT_BOT_POLICY){
-  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicTichu(view):baselineTichu(view);
+  return isStrategicPolicy(profile)?strategicTichu(view):baselineTichu(view);
 }
 
 export function chooseExchange(view,profile=DEFAULT_BOT_POLICY){
-  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicExchange(view):baselineExchange(view);
+  return isStrategicPolicy(profile)?strategicExchange(view):baselineExchange(view);
 }
 
 export function chooseWish(view,selectedCards=[],profile=DEFAULT_BOT_POLICY){
-  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicWish(view,selectedCards):baselineWish(view,selectedCards);
+  return isStrategicPolicy(profile)?strategicWish(view,selectedCards):baselineWish(view,selectedCards);
 }
 
 export function choosePlay(view,profile=DEFAULT_BOT_POLICY){
-  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicPlay(view):baselinePlay(view);
+  const normalized=normalizeBotPolicy(profile);
+  if(normalized===BOT_POLICY_BASELINE)return baselinePlay(view);
+  return strategicPlay(view,{nextSeatLookahead:normalized===BOT_POLICY_STRATEGIC});
 }
 
 export function chooseDragonRecipient(view,profile=DEFAULT_BOT_POLICY){
-  return normalizeBotPolicy(profile)===BOT_POLICY_STRATEGIC?strategicDragonRecipient(view):baselineDragonRecipient(view);
+  return isStrategicPolicy(profile)?strategicDragonRecipient(view):baselineDragonRecipient(view);
 }
