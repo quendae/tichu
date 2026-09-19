@@ -20,6 +20,10 @@ function fakeMatch({seed,botPolicies}){
       declarations:[],
       doubleVictories:0,
       finishPositions:{0:[1,3],1:[2,4]},
+      teamPlay:{
+        strategic:{partnerPasses:2,partnerOvertakes:1,opponentThreatStops:3,goOutPlays:1},
+        baseline:{partnerPasses:1,partnerOvertakes:4,opponentThreatStops:1,goOutPlays:0},
+      },
       actionCount:12,
       rejectedDecisions:0,
       decisionTiming:{count:4,totalMs:8,maxMs:3},
@@ -49,10 +53,18 @@ test('paired benchmark orients strategic score differential after team policy sw
   assert.equal(result.gitSha,'test-sha');
 });
 
+test('benchmark aggregates team-play telemetry by policy',()=>{
+  const result=runBotBenchmark({pairs:1,baseSeed:51,matchRunner:fakeMatch,writeReports:false});
+  assert.deepEqual(result.teamPlay.strategic,{partnerPasses:4,partnerOvertakes:2,opponentThreatStops:6,goOutPlays:2});
+  assert.deepEqual(result.teamPlay.baseline,{partnerPasses:2,partnerOvertakes:8,opponentThreatStops:2,goOutPlays:0});
+  const report=result.reportText;
+  assert.match(report,/partner passes strategic\/baseline: 4\/2/);
+  assert.match(report,/partner overtakes strategic\/baseline: 2\/8/);
+  assert.match(report,/opponent threat stops strategic\/baseline: 6\/2/);
+});
+
 test('paired benchmark ties a seed pair when swapped score differentials cancel',()=>{
-  let call=0;
   const matchRunner=input=>{
-    call+=1;
     const scores=[1050,950];
     return{
       ...fakeMatch(input),
