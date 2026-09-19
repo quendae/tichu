@@ -9,6 +9,7 @@ const MATCH_A=[STRATEGIC,BASELINE,STRATEGIC,BASELINE];
 const MATCH_B=[BASELINE,STRATEGIC,BASELINE,STRATEGIC];
 
 const winBucket=()=>({strategic:0,baseline:0,ties:0});
+const teamPlayBucket=()=>({partnerPasses:0,partnerOvertakes:0,opponentThreatStops:0,goOutPlays:0});
 const declarationBucket=()=>({
   tichu:{calls:0,successes:0,failures:0,netPoints:0},
   grand:{calls:0,successes:0,failures:0,netPoints:0},
@@ -50,6 +51,15 @@ function accumulateMatchTelemetry(summary,match,botPolicies){
   summary.timing.count+=timingCount;
   summary.timing.totalMs+=timingTotal;
   summary.timing.maxMs=Math.max(summary.timing.maxMs,timingMax);
+
+  const teamPlay=telemetry.teamPlay||{};
+  for(const policy of[STRATEGIC,BASELINE]){
+    const source=teamPlay[policy]||{};
+    const target=summary.teamPlay[policy];
+    for(const metric of Object.keys(target)){
+      if(Number.isFinite(source[metric]))target[metric]+=source[metric];
+    }
+  }
 
   if(!Array.isArray(telemetry.rounds))return;
   for(const round of telemetry.rounds){
@@ -132,6 +142,10 @@ export function formatBotBenchmarkReport(summary){
     `aggregate pair differential: ${summary.aggregatePairDifferential}`,
     `declaration net strategic/baseline: ${summary.declarations.strategic.netPoints}/${summary.declarations.baseline.netPoints}`,
     `double victories strategic/baseline: ${summary.doubles.strategic}/${summary.doubles.baseline}`,
+    `partner passes strategic/baseline: ${summary.teamPlay.strategic.partnerPasses}/${summary.teamPlay.baseline.partnerPasses}`,
+    `partner overtakes strategic/baseline: ${summary.teamPlay.strategic.partnerOvertakes}/${summary.teamPlay.baseline.partnerOvertakes}`,
+    `opponent threat stops strategic/baseline: ${summary.teamPlay.strategic.opponentThreatStops}/${summary.teamPlay.baseline.opponentThreatStops}`,
+    `go-out plays strategic/baseline: ${summary.teamPlay.strategic.goOutPlays}/${summary.teamPlay.baseline.goOutPlays}`,
     `average finish strategic/baseline: ${summary.finishPosition.strategic.average?.toFixed(3)??'n/a'}/${summary.finishPosition.baseline.average?.toFixed(3)??'n/a'}`,
     `actions total/avg: ${summary.actionCounts.total}/${summary.actionCounts.averagePerMatch.toFixed(2)}`,
     `decision timing avg/max ms: ${summary.timing.averageMs.toFixed(3)}/${summary.timing.maxMs.toFixed(3)}`,
@@ -183,6 +197,7 @@ export function runBotBenchmark({
     rounds:0,
     declarations:{strategic:declarationBucket(),baseline:declarationBucket()},
     doubles:{strategic:0,baseline:0},
+    teamPlay:{strategic:teamPlayBucket(),baseline:teamPlayBucket()},
     finishPosition:{strategic:{total:0,count:0,average:null},baseline:{total:0,count:0,average:null}},
     actionCounts:{total:0,matches:0,averagePerMatch:0,averageRoundsPerMatch:0},
     rejectedDecisions:0,
@@ -235,6 +250,7 @@ export function runBotBenchmark({
 
   finalizeSummary(summary);
   evaluateBenchmark(summary,{validate});
+  summary.reportText=formatBotBenchmarkReport(summary);
   if(shouldWriteReports)writeReports(summary,reportDir);
   return summary;
 }
