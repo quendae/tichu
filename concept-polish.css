@@ -94,3 +94,25 @@
 @media(max-height:400px) and (orientation:landscape){
   .seat-top .player-copy small{display:none}
 }
+
+/* End-of-round and end-of-match hierarchy: round delta first, total match score second, one clear continuation action. */
+.summary-card{text-align:center;padding:23px 24px}
+.summary-kicker,.summary-outcome{display:block;margin-bottom:4px;color:var(--brass);font-size:8px;font-weight:900;letter-spacing:.17em}
+.summary-match-card.won .summary-outcome{color:#92dfb6}.summary-match-card.lost .summary-outcome{color:#e5a08d}
+.summary-block{margin:12px 0;padding:11px;border:1px solid #ffffff14;border-radius:10px;background:#ffffff05}
+.summary-block>small,.summary-match-score>small{display:block;margin-bottom:6px}
+.summary-round-score{gap:18px}.summary-round-score span{min-width:64px}.summary-round-score b{font-size:32px}
+.summary-match-score{margin:12px 0 16px;padding-top:11px;border-top:1px solid #ffffff12}
+.summary-match-score>div{display:flex;align-items:center;justify-content:center;gap:10px;color:#aab6b0;font-size:9px}
+.summary-match-score span{display:flex;align-items:baseline;gap:6px}.summary-match-score b{font:700 22px Georgia,serif;color:var(--ui)}.summary-match-score i{font-style:normal;color:#69776f}
+.summary-primary{width:100%;min-height:42px;font-weight:800}
+
+@media(max-width:680px){
+  .round-summary{width:min(94%,360px)}
+  .summary-card{padding:17px 16px}
+  .summary-card h2{font-size:21px}
+  .summary-block{margin:9px 0;padding:9px}
+  .summary-round-score b{font-size:27px}
+  .summary-match-score{margin:9px 0 12px;padding-top:9px}
+  .summary-match-score b{font-size:19px}
+}
