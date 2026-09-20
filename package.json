@@ -12,12 +12,14 @@
     "sim": "node scripts/simulate.mjs",
     "replay": "node scripts/replay.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:cross-browser": "playwright test -c playwright.cross-browser.config.mjs",
     "test:e2e:multiplayer": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/live-2h2b.spec.mjs",
     "test:e2e:multiplayer:full": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-4h.spec.mjs tests/e2e-multiplayer/takeover.spec.mjs",
     "test:e2e:multiplayer:match": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-match-4h.spec.mjs",
     "test:e2e:multiplayer:match:2h2b": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-match-2h2b.spec.mjs",
     "test:e2e:multiplayer:match:takeover": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-match-takeover.spec.mjs",
     "test:e2e:multiplayer:edges": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/edge-cases.spec.mjs",
+    "test:e2e:multiplayer:cross-browser": "playwright test -c playwright.multiplayer.cross-browser.config.mjs",
     "serve": "node scripts/serve.mjs"
   },
   "devDependencies": {
