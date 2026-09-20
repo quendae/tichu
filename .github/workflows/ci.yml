@@ -176,3 +176,28 @@ jobs:
           name: tichu-cross-browser-multiplayer-artifacts
           path: test-results-cross-browser-multiplayer/**
           if-no-files-found: ignore
+
+  multiplayer-soak-stress:
+    if: github.ref == 'refs/heads/feature/multiplayer-soak-stress'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SOAK_ROOMS: 4
+      SOAK_CHURN_ROOMS: 8
+      SOAK_RECONNECT_AFTER_ACTIONS: 60
+      SOAK_MAX_ACTIONS: 6000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:multiplayer:soak
+      - name: Upload soak diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tichu-multiplayer-soak-artifacts
+          path: test-results-multiplayer/**
+          if-no-files-found: ignore
