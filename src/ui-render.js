@@ -140,12 +140,19 @@ function renderWishBar(uiState){
   bar.innerHTML=`<div class="wish-inline"><span><small>MAH JONG</small><b>Wybierz życzenie</b></span><div class="wish-ranks">${ranks.map(rank=>`<button type="button" data-wish="${rank}" class="secondary">${rankText(rank)}</button>`).join('')}<button type="button" data-wish="none" class="ghost">Bez życzenia</button></div></div>`;
 }
 
+function matchScoreHTML(state){
+  return `<div class="summary-match-score"><small>WYNIK MECZU</small><div><span>MY <b>${state.scores?.[0]??0}</b></span><i>:</i><span><b>${state.scores?.[1]??0}</b> ONI</span></div></div>`;
+}
+
 function renderRoundSummary(state){
   const host=$('#round-summary');if(!host)return;
   if(!['round-end','match-end'].includes(state.phase)){host.classList.add('hidden');host.innerHTML='';return;}
   host.classList.remove('hidden');
-  if(state.phase==='round-end')host.innerHTML=`<div class="summary-card"><small>RUNDA ${state.round}</small><h2>Koniec rundy</h2><div class="summary-score"><span><b>${state.roundScore?.[0]??0}</b> My</span><i>:</i><span><b>${state.roundScore?.[1]??0}</b> Oni</span></div><p>Wynik meczu ${state.scores?.[0]??0} : ${state.scores?.[1]??0}</p><button type="button" data-inline="next-round" class="primary">Następna runda</button></div>`;
-  else host.innerHTML=`<div class="summary-card"><small>KONIEC MECZU</small><h2>${state.winnerTeam===0?'Wygrywacie!':'Wygrywają rywale'}</h2><p>Wynik końcowy ${state.scores?.[0]??0} : ${state.scores?.[1]??0}</p><button type="button" data-inline="new-match" class="primary">Nowy mecz</button></div>`;
+  if(state.phase==='round-end')host.innerHTML=`<div class="summary-card summary-round-card"><span class="summary-kicker">RUNDA ${state.round} ZAKOŃCZONA</span><h2>Koniec rundy</h2><div class="summary-block"><small>PUNKTY TEJ RUNDY</small><div class="summary-score summary-round-score"><span><b>${state.roundScore?.[0]??0}</b> My</span><i>:</i><span><b>${state.roundScore?.[1]??0}</b> Oni</span></div></div>${matchScoreHTML(state)}<button type="button" data-inline="next-round" class="primary summary-primary">Graj następną rundę</button></div>`;
+  else{
+    const won=state.winnerTeam===0;
+    host.innerHTML=`<div class="summary-card summary-match-card ${won?'won':'lost'}"><span class="summary-outcome">${won?'ZWYCIĘSTWO':'PORAŻKA'}</span><h2>${won?'Wygrywacie mecz!':'Mecz wygrywają rywale'}</h2>${matchScoreHTML(state)}<button type="button" data-inline="new-match" class="primary summary-primary">Zagraj ponownie</button></div>`;
+  }
 }
 
 function renderTurnStatus(state){
