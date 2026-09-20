@@ -89,6 +89,7 @@
     <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   </div>
   <script type="module" src="./src/ui.js"></script>
+  <script type="module" src="./src/coach-toggle-guard.js"></script>
   <script type="module">
     if(new URLSearchParams(location.search).get('e2e')==='1'){
       const {installTichuE2EBridge}=await import('./src/e2e-bridge.js');
