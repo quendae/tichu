@@ -45,16 +45,16 @@ test('malformed stored layout resets to defaults and reset removes persistence',
   assert.equal(storage.getItem('tichu.qqnd.desktop-layout.v1'),null);
 });
 
-test('desktop CSS contains the seven documented variables',()=>{
-  const css=desktopLayoutCss({...DESKTOP_UI_DEFAULTS,coachTextScale:120});
+test('desktop CSS contains the seven documented variables with unitless scale factors',()=>{
+  const css=desktopLayoutCss({...DESKTOP_UI_DEFAULTS,badgeScale:125,coachTextScale:130});
   assert.deepEqual(css,{
     '--local-card-width':'104px',
     '--opponent-card-width':'96px',
     '--local-hand-step':'72px',
     '--opponent-hand-step':'34px',
-    '--badge-scale':'100%',
+    '--badge-scale':'1.25',
     '--played-card-step':'54px',
-    '--coach-text-scale':'120%',
+    '--coach-text-scale':'1.3',
   });
 });
 
