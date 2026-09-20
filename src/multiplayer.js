@@ -14,6 +14,7 @@ export class MultiplayerClient {
     this.active=false;this.authoritative=false;this.isHost=false;this.rooms=[];this.fillBots=true;this.queued=false;
     this.stateSeq=0;this.reconnectTimer=null;this.botSeats=[];this.presence=[];
     this.rebaseNextState=true;this.pendingVisualState=null;
+    this.connectionState='connected';this.presenceTick=null;this.returnNotices=new Map();this.returnNoticeTimers=new Map();
     window.addEventListener('online',()=>this.scheduleReconnect());
   }
 
@@ -36,9 +37,15 @@ export class MultiplayerClient {
       ws.onopen=()=>{opened=true};
       ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='hello'){clearTimeout(timer);resolve(ws)}this.settle(m);this.handle(m)};
       ws.onerror=()=>{if(!opened)reject(new Error('websocket_error'))};
-      ws.onclose=()=>{this.socket=null;this.socketPromise=null;this.session=null;if(this.active){this.rebaseNextState=true;this.scheduleReconnect()}};
+      ws.onclose=()=>this.onSocketClosed();
     }).finally(()=>this.socketPromise=null);
     return this.socketPromise;
+  }
+
+  onSocketClosed(){
+    this.socket=null;this.socketPromise=null;this.session=null;
+    if(!this.active){this.renderGameConnection();return}
+    this.rebaseNextState=true;this.connectionState='reconnecting';this.renderGameConnection();this.scheduleReconnect();
   }
 
   scheduleReconnect(){if(this.reconnectTimer)return;this.reconnectTimer=setTimeout(async()=>{this.reconnectTimer=null;try{await this.ensureSocket();await this.resume(true);if(this.room?.status==='in_game')this.send({type:'game.state.get',roomId:this.room.id})}catch{this.scheduleReconnect()}},1300)}
@@ -73,6 +80,7 @@ export class MultiplayerClient {
   seatFor(id){return this.room?.players?.findIndex(p=>p.id===id)??-1}
   viewerSeat(){const own=Number.isInteger(this.seat)&&this.seat>=0?this.seat:this.seatFor(this.session?.id);return own>=0?own:0}
   relativeSeatRole(actual){const diff=(actual-this.viewerSeat()+4)%4;return diff===0?'TY':diff===2?'PARTNER':'RYWAL'}
+  localSeat(serverSeat){const own=Number.isInteger(this.seat)?this.seat:0;return (Number(serverSeat)-own+4)%4}
 
   syncRoom(room){
     if(!room||room.game!==GAME_ID)return;
@@ -229,6 +237,62 @@ export class MultiplayerClient {
     }).join(''):`<p class="mp-empty">Brak publicznych stołów. Utwórz własny albo wybierz Szybką grę.</p>`;
   }
 
+  renderGameConnection(){
+    let banner=this.el('mp-connection-banner');
+    if(!this.active||this.connectionState==='connected'){
+      if(banner)banner.remove();
+      return;
+    }
+    if(!banner){
+      banner=document.createElement('div');banner.id='mp-connection-banner';banner.className='mp-connection-banner';banner.setAttribute('role','status');banner.setAttribute('aria-live','polite');
+      (this.el('app')||document.body).appendChild(banner);
+    }
+    banner.textContent='Utracono połączenie · ponowne łączenie…';
+  }
+
+  deadlineMs(value){const direct=Number(value);if(Number.isFinite(direct))return direct;const parsed=Date.parse(String(value||''));return Number.isFinite(parsed)?parsed:0}
+
+  presenceLabel(entry){
+    const returnedUntil=this.returnNotices.get(entry.sessionId)||0;
+    if(returnedUntil>Date.now())return {text:'GRACZ WRÓCIŁ',kind:'returned'};
+    if(entry.botActive)return {text:'BOT GRA ZA GRACZA',kind:'takeover'};
+    if(entry.connected!==false)return null;
+    const deadline=this.deadlineMs(entry.graceDeadline);
+    const seconds=deadline?Math.max(0,Math.ceil((deadline-Date.now())/1000)):null;
+    return {text:seconds===null?'ROZŁĄCZONY':`ROZŁĄCZONY · bot za ${seconds} s`,kind:'offline'};
+  }
+
+  renderGamePresence(){
+    document.querySelectorAll('.mp-presence-chip').forEach(node=>node.remove());
+    if(!this.active){if(this.presenceTick){clearInterval(this.presenceTick);this.presenceTick=null}return}
+    let needsTick=false;
+    for(const entry of this.presence||[]){
+      const local=this.localSeat(entry.seat);if(local===0)continue;
+      const badge=document.querySelector(`.seat[data-seat="${local}"] .player-badge`);if(!badge)continue;
+      const label=this.presenceLabel(entry);if(!label)continue;
+      const chip=document.createElement('span');chip.className=`mp-presence-chip ${label.kind}`;chip.textContent=label.text;badge.appendChild(chip);
+      const deadline=this.deadlineMs(entry.graceDeadline);if(entry.connected===false&&!entry.botActive&&deadline>Date.now())needsTick=true;
+    }
+    if(needsTick&&!this.presenceTick)this.presenceTick=setInterval(()=>this.renderGamePresence(),1000);
+    if(!needsTick&&this.presenceTick){clearInterval(this.presenceTick);this.presenceTick=null}
+  }
+
+  markReturned(sessionId){
+    if(!sessionId)return;
+    this.returnNotices.set(sessionId,Date.now()+2800);
+    const previous=this.returnNoticeTimers.get(sessionId);if(previous)clearTimeout(previous);
+    const timer=setTimeout(()=>{this.returnNotices.delete(sessionId);this.returnNoticeTimers.delete(sessionId);this.renderGamePresence()},2800);
+    this.returnNoticeTimers.set(sessionId,timer);
+  }
+
+  updatePresenceFromConnection(m){
+    const index=this.presence.findIndex(entry=>entry.sessionId===m.sessionId||entry.seat===m.seat);
+    const current=index>=0?this.presence[index]:{sessionId:m.sessionId,seat:m.seat,nickname:m.nickname};
+    const updated={...current,sessionId:m.sessionId??current.sessionId,seat:Number.isInteger(m.seat)?m.seat:current.seat,nickname:m.nickname??current.nickname,connected:!!m.connected,graceDeadline:m.connected?null:(m.graceDeadline??current.graceDeadline),botActive:m.connected?false:!!(m.botActive??current.botActive)};
+    if(index>=0)this.presence.splice(index,1,updated);else this.presence.push(updated);
+    if(m.connected&&this.localSeat(updated.seat)!==0)this.markReturned(updated.sessionId);
+  }
+
   async refreshRooms(){try{await this.ensureSocket();this.send({type:'rooms.list',game:GAME_ID})}catch(e){this.status(this.friendly(e),true)}}
 
   async createRoom(){
@@ -261,7 +325,8 @@ export class MultiplayerClient {
 
   async leave(){
     try{if(this.queued)this.send({type:'queue.leave',game:GAME_ID});if(this.room)this.send({type:'room.leave',roomId:this.room.id})}catch{}
-    this.active=false;this.authoritative=false;this.queued=false;this.room=null;this.seat=null;this.isHost=false;this.stateSeq=0;this.rebaseNextState=true;
+    this.active=false;this.authoritative=false;this.queued=false;this.room=null;this.seat=null;this.isHost=false;this.stateSeq=0;this.rebaseNextState=true;this.connectionState='connected';this.presence=[];this.botSeats=[];
+    if(this.presenceTick){clearInterval(this.presenceTick);this.presenceTick=null}for(const timer of this.returnNoticeTimers.values())clearTimeout(timer);this.returnNoticeTimers.clear();this.returnNotices.clear();this.renderGameConnection();this.renderGamePresence();
     this.game.state.multiplayer=false;this.game.configurePlayers(['You','Mei','Lin','Wei'],[1,2,3]);this.renderLobby();this.refreshRooms();
   }
 
@@ -282,18 +347,18 @@ export class MultiplayerClient {
 
   handle(m){
     if(m.type==='session.created'){this.session=m.session;this.resumeToken=m.resumeToken;this.store();return}
-    if(m.type==='session.resumed'){this.rebaseNextState=true;this.session=m.session;const r=(m.rooms||[]).find(x=>x.game===GAME_ID);if(r)this.syncRoom(r);return}
+    if(m.type==='session.resumed'){this.rebaseNextState=true;this.session=m.session;this.connectionState='connected';this.renderGameConnection();const r=(m.rooms||[]).find(x=>x.game===GAME_ID);if(r)this.syncRoom(r);return}
     if(['room.created','room.joined','room.updated'].includes(m.type)&&m.room?.game===GAME_ID){this.syncRoom(m.room);return}
     if(m.type==='room.left'&&this.room?.id===m.roomId){if(!this.active){this.room=null;this.renderLobby()}return}
     if(m.type==='rooms.list'){this.rooms=m.rooms||[];this.renderRooms();return}
     if(m.type==='queue.joined'){this.queued=true;this.renderLobby();this.status(Number.isInteger(m.position)?`Szukam stołu · pozycja ${m.position}.`:'Szukam stołu…');return}
     if(m.type==='queue.left'){this.queued=false;this.renderLobby();return}
     if(m.type==='match.found'&&m.game===GAME_ID){this.queued=false;this.syncRoom(m.room);this.status('Znaleziono stół.');return}
-    if(m.type==='game.started'&&m.room?.game===GAME_ID){this.stateSeq=0;this.rebaseNextState=true;this.active=true;this.authoritative=!!m.authoritative;this.seat=m.seat;this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||[];this.syncRoom(m.room);document.getElementById('modal-root').innerHTML='';this.send({type:'game.state.get',roomId:m.room.id});return}
-    if(m.type==='game.state'&&this.room?.id===m.roomId){if(Number.isInteger(m.viewerSeat))this.seat=m.viewerSeat;this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;this.authoritative=!!m.authoritative;this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||this.presence;this.applyState(m.state,m.revision);return}
-    if(m.type==='game.presence'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||[];this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;return}
-    if(m.type==='game.player.connection'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);return}
-    if(m.type==='game.player.bot_takeover'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);return}
+    if(m.type==='game.started'&&m.room?.game===GAME_ID){this.stateSeq=0;this.rebaseNextState=true;this.active=true;this.connectionState='connected';this.authoritative=!!m.authoritative;this.seat=m.seat;this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||[];this.syncRoom(m.room);document.getElementById('modal-root').innerHTML='';this.renderGameConnection();this.send({type:'game.state.get',roomId:m.room.id});return}
+    if(m.type==='game.state'&&this.room?.id===m.roomId){if(Number.isInteger(m.viewerSeat))this.seat=m.viewerSeat;this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;this.connectionState='connected';this.authoritative=!!m.authoritative;this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||this.presence;this.applyState(m.state,m.revision);return}
+    if(m.type==='game.presence'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||[];this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;this.renderGamePresence();return}
+    if(m.type==='game.player.connection'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);this.updatePresenceFromConnection(m);this.renderGamePresence();return}
+    if(m.type==='game.player.bot_takeover'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);const index=this.presence.findIndex(entry=>entry.sessionId===m.sessionId||entry.seat===m.seat);if(index>=0)this.presence[index]={...this.presence[index],connected:false,graceDeadline:null,botActive:true};this.renderGamePresence();return}
     if(m.type==='game.host.changed'&&this.room?.id===m.roomId){this.hostId=m.hostSessionId;this.isHost=this.session?.id===this.hostId;this.botSeats=this.localBotSeats(m.botSeats||[]);return}
     if(m.type==='error')this.status(this.friendly(m.code),true);
   }
@@ -306,6 +371,7 @@ export class MultiplayerClient {
     Object.assign(this.game.state,snapshot,{selected:new Set(),multiplayer:true,botSeats:[...this.botSeats],settings:localSettings});
     this.pendingVisualState={streamId:this.room?.id||'',revision:seq,rebase:this.rebaseNextState};this.rebaseNextState=false;
     try{this.game.emit()}finally{this.pendingVisualState=null}
+    this.renderGameConnection();this.renderGamePresence();
   }
 
   friendly(e){
