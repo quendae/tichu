@@ -21,4 +21,14 @@
   .coach-selection b{font-size:calc(9px * var(--coach-text-scale))}
   .coach-selection span,.coach-meta,.coach-toggle{font-size:calc(8px * var(--coach-text-scale))}
   .coach-off-button{font-size:calc(9px * var(--coach-text-scale))}
+
+  /* Wider opponent/table cards make the centered trick stage taller.
+     Expand the vertical playfield symmetrically so the supported Dev UI
+     maximum remains clear of both hands without moving default geometry. */
+  .seat-top{
+    top:clamp(-5px,calc(11px - (var(--opponent-card-width) - 96px)),11px);
+  }
+  .seat-bottom{
+    bottom:clamp(-12px,calc(4px - (var(--opponent-card-width) - 96px)),4px);
+  }
 }
