@@ -70,6 +70,26 @@ jobs:
           path: test-results-cross-browser/**
           if-no-files-found: ignore
 
+  multiplayer-ux-live-takeover:
+    if: github.ref == 'refs/heads/feature/multiplayer-ux-polish'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Live disconnect and substitute-bot takeover
+        run: npx playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/takeover.spec.mjs
+      - name: Upload live takeover diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tichu-multiplayer-ux-live-takeover-artifacts
+          path: test-results-multiplayer/**
+          if-no-files-found: ignore
+
   multiplayer-full-match:
     if: github.ref == 'refs/heads/feature/multiplayer-full-match-acceptance'
     runs-on: ubuntu-latest
