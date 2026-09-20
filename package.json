@@ -20,6 +20,7 @@
     "test:e2e:multiplayer:match:takeover": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-match-takeover.spec.mjs",
     "test:e2e:multiplayer:edges": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/edge-cases.spec.mjs",
     "test:e2e:multiplayer:cross-browser": "playwright test -c playwright.multiplayer.cross-browser.config.mjs",
+    "test:e2e:multiplayer:soak": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/soak-stress.spec.mjs tests/e2e-multiplayer/takeover.spec.mjs",
     "serve": "node scripts/serve.mjs"
   },
   "devDependencies": {
