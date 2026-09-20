@@ -55,36 +55,47 @@
         <div class="seat seat-left" data-seat="1"></div>
         <div class="seat seat-right" data-seat="3"></div>
 
-        <div id="wish-chip" class="wish-chip hidden"></div>
-        <div id="round-summary" class="round-summary hidden"></div>
-        <div id="table-pile" class="table-pile"></div>
-        <div id="coach-panel" class="coach-dock"></div>
-
-        <div class="seat seat-bottom" data-seat="0"></div>
-        <section id="context-panel" class="context-panel" aria-live="polite"></section>
-        <section id="wish-bar" class="wish-bar hidden" aria-label="Wybór życzenia Mah Jonga"></section>
-        <div class="bottom-controls">
-          <span id="turn-status" class="turn-status"></span>
-          <div class="play-controls">
-            <button id="pass-btn" data-action="pass" class="secondary">Pas</button>
-            <button id="tichu-btn" data-action="call-tichu" class="tichu-action">Tichu</button>
-            <button id="play-btn" data-action="play" class="primary">Zagraj</button>
+        <div class="center">
+          <div id="wish-chip" class="wish-chip hidden"></div>
+          <div id="context-panel" class="context-panel" aria-live="polite"></div>
+          <div id="table-pile" class="table-pile"></div>
+          <div id="wish-bar" class="wish-bar hidden"></div>
+          <div id="turn-status" class="turn-status" aria-live="polite"></div>
+          <div class="table-actions">
+            <button data-action="pass" id="pass-btn" class="secondary action-pass" disabled>Spasuj</button>
+            <button data-action="call-tichu" id="tichu-btn" class="secondary action-tichu">Tichu +100</button>
+            <button data-action="play" id="play-btn" class="primary action-play" disabled>Zagraj</button>
           </div>
+          <div id="round-summary" class="round-summary hidden"></div>
         </div>
+
+        <div id="coach-panel" class="coach-dock" aria-live="polite"></div>
+        <div class="seat seat-bottom" data-seat="0"></div>
       </section>
     </main>
 
-    <aside id="log-panel" class="drawer hidden" aria-label="Historia gry">
-      <div class="drawer-head"><b>Historia</b><button data-action="close-drawer" class="icon-ghost" aria-label="Zamknij historię">×</button></div>
-      <div id="game-log" class="game-log"></div>
+    <aside id="log-panel" class="drawer hidden">
+      <div class="drawer-head"><h2>Historia gry</h2><button data-action="close-drawer" aria-label="Zamknij historię">×</button></div>
+      <div id="game-log" class="log-list"></div>
     </aside>
+    <aside id="dev-ui-panel" class="dev-ui-panel" aria-label="Dev UI" hidden></aside>
 
-    <aside id="dev-ui-panel" class="dev-ui-panel" hidden aria-label="Dev UI"></aside>
-    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+    <footer class="statusbar">
+      <span>Tichu v0.2.0</span><i></i><span id="mode-status">Gra lokalna · 3 boty</span>
+      <span class="status-spacer"></span>
+      <span id="coach-status">🎓 Coach: ON</span><i></i><span id="round-status">Runda 1</span><i></i><span id="turn-status-footer">Twój ruch</span>
+    </footer>
+
     <div id="modal-root"></div>
-
-    <footer class="footer"><span id="mode-label">Gra lokalna · 3 boty</span><span>QQND</span></footer>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   </div>
   <script type="module" src="./src/ui.js"></script>
+  <script type="module" src="./src/coach-toggle-guard.js"></script>
+  <script type="module">
+    if(new URLSearchParams(location.search).get('e2e')==='1'){
+      const {installTichuE2EBridge}=await import('./src/e2e-bridge.js');
+      installTichuE2EBridge(window.tichu);
+    }
+  </script>
 </body>
 </html>
