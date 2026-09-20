@@ -21,9 +21,6 @@ jobs:
       - name: Live multiplayer E2E
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         run: npm run test:e2e:multiplayer
-      - name: Full-match multiplayer acceptance
-        if: github.ref == 'refs/heads/feature/multiplayer-full-match-acceptance'
-        run: npm run test:e2e:multiplayer:match
       - name: Upload UI, multiplayer, and benchmark diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -33,4 +30,23 @@ jobs:
             test-results/*.png
             test-results-multiplayer/**
             artifacts/bot-benchmarks/**
+          if-no-files-found: ignore
+
+  multiplayer-full-match:
+    if: github.ref == 'refs/heads/feature/multiplayer-full-match-acceptance'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e:multiplayer:match
+      - name: Upload full-match diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tichu-full-match-artifacts
+          path: test-results-multiplayer/**
           if-no-files-found: ignore
