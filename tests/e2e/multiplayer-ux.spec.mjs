@@ -5,9 +5,9 @@ async function renderShell(page){
   await page.evaluate(()=>window.tichu.mp.renderShell());
 }
 
-async function renderRoom(page,{seat=1,isHost=false,fillBots=true}={}){
+async function renderRoom(page,{seat=1,isHost=false,fillBots=true,allConnected=false}={}){
   await renderShell(page);
-  await page.evaluate(({seat,isHost,fillBots})=>{
+  await page.evaluate(({seat,isHost,fillBots,allConnected})=>{
     const mp=window.tichu.mp;
     mp.session={id:`p${seat}`,nickname:'Gracz'};
     mp.seat=seat;
@@ -18,11 +18,11 @@ async function renderRoom(page,{seat=1,isHost=false,fillBots=true}={}){
       players:[
         {id:'p0',nickname:'Ala',connected:true},
         {id:'p1',nickname:'Bartek',connected:true},
-        {id:'p2',nickname:'Celina',connected:false},
+        {id:'p2',nickname:'Celina',connected:allConnected},
       ],
     };
     mp.renderLobby();
-  },{seat,isHost,fillBots});
+  },{seat,isHost,fillBots,allConnected});
 }
 
 test('multiplayer setup leads with Quick Play and keeps room creation secondary',async({page})=>{
@@ -80,7 +80,7 @@ test('lobby seats are labelled from the local player perspective',async({page})=
 });
 
 test('host lobby exposes readiness and a clear start action',async({page})=>{
-  await renderRoom(page,{seat:0,isHost:true,fillBots:true});
+  await renderRoom(page,{seat:0,isHost:true,fillBots:true,allConnected:true});
   await expect(page.locator('#mp-start')).toBeVisible();
   await expect(page.locator('#mp-start')).toBeEnabled();
   await expect(page.locator('#mp-lobby-state')).toContainText('Stół gotowy');
