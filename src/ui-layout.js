@@ -76,9 +76,9 @@ export function desktopLayoutCss(values){
     '--opponent-card-width':`${layout.opponentCardWidth}px`,
     '--local-hand-step':`${layout.localHandStep}px`,
     '--opponent-hand-step':`${layout.opponentHandStep}px`,
-    '--badge-scale':`${layout.badgeScale}%`,
+    '--badge-scale':String(layout.badgeScale/100),
     '--played-card-step':`${layout.playedCardStep}px`,
-    '--coach-text-scale':`${layout.coachTextScale}%`,
+    '--coach-text-scale':String(layout.coachTextScale/100),
   };
 }
 
