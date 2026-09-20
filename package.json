@@ -17,6 +17,7 @@
     "test:e2e:multiplayer:match": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-match-4h.spec.mjs",
     "test:e2e:multiplayer:match:2h2b": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-match-2h2b.spec.mjs",
     "test:e2e:multiplayer:match:takeover": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/full-match-takeover.spec.mjs",
+    "test:e2e:multiplayer:edges": "playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/edge-cases.spec.mjs",
     "serve": "node scripts/serve.mjs"
   },
   "devDependencies": {
