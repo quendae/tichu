@@ -35,6 +35,15 @@ jobs:
   multiplayer-full-match:
     if: github.ref == 'refs/heads/feature/multiplayer-full-match-acceptance'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: 4h
+            script: test:e2e:multiplayer:match
+          - name: 2h2b
+            script: test:e2e:multiplayer:match:2h2b
+    name: multiplayer-full-match-${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -42,11 +51,11 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e:multiplayer:match
+      - run: npm run ${{ matrix.script }}
       - name: Upload full-match diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tichu-full-match-artifacts
+          name: tichu-full-match-${{ matrix.name }}-artifacts
           path: test-results-multiplayer/**
           if-no-files-found: ignore
