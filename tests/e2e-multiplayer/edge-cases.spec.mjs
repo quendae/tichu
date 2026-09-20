@@ -283,7 +283,9 @@ test('production QQND edge: Dragon recipient wait survives reconnect',async({bro
     const after=await bridgeState(starter.client);
     expect(after.dragonRecipient).toBeNull();
     expect(after.table).toEqual([]);
-    expect(after.captured[1].some(card=>card.id==='dragon')).toBe(true);
+    const recipientName=after.names[1];
+    expect(after.log.some(entry=>String(entry.text).includes(`gives the Dragon trick to ${recipientName}`))).toBe(true);
+    expect(after.captured.every(pile=>pile.length===0)).toBe(true);
   }catch(error){failed=true;throw error}finally{await cleanupEdge(testInfo,ctx,failed)}
 });
 
