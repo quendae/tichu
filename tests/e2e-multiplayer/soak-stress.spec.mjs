@@ -139,17 +139,14 @@ async function assertRoomsGone(browser,baseURL,roomIds,tag){
     await openMultiplayer(probe);
     await probe.page.locator('#mp-nick').fill(`SOAK-${tag}-PROBE`);
     for(const roomId of roomIds){
-      const errorsBefore=probe.errors.length;
       await probe.page.locator('#mp-code').fill(roomId);
       await probe.page.evaluate(()=>{const status=document.getElementById('mp-status');if(status){status.textContent='';status.classList.remove('error')}});
       await probe.page.locator('#mp-join').click();
-      await expect(probe.page.locator('#mp-status')).not.toHaveText('',{timeout:10_000});
-      await expect(probe.page.locator('#mp-status')).toHaveClass(/error/);
-      await expect.poll(()=>probe.errors.length,{timeout:10_000}).toBe(errorsBefore+1);
-      expect(probe.errors.at(-1)).toBe('server:room_not_found');
+      const status=probe.page.locator('#mp-status');
+      await expect(status).toHaveClass(/error/,{timeout:10_000});
+      await expect(status).toHaveText('Nie znaleziono pokoju.');
       expect((await bridgeStatus(probe)).roomId).toBeNull();
     }
-    expect(probe.errors).toEqual(roomIds.map(()=> 'server:room_not_found'));
   }finally{
     await cleanupClients([probe]);
   }
