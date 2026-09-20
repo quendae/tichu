@@ -1,0 +1,21 @@
+/* Cross-browser scale math.
+   Firefox does not accept the percentage-division form used by the legacy
+   calc() declarations. Runtime layout values are unitless scale factors. */
+:root{
+  --badge-scale:1;
+  --coach-text-scale:1;
+}
+
+.avatar{
+  width:calc(48px * var(--badge-scale));
+  height:calc(48px * var(--badge-scale));
+  flex:0 0 calc(48px * var(--badge-scale));
+}
+
+.coach-drag-handle{font-size:calc(8px * var(--coach-text-scale))}
+.coach-guide small{font-size:calc(7px * var(--coach-text-scale))}
+.coach-guide b,.coach-guide span{font-size:calc(10px * var(--coach-text-scale))}
+.coach-guide b{font:700 calc(13px * var(--coach-text-scale))/1.28 Georgia,serif}
+.coach-selection b{font-size:calc(9px * var(--coach-text-scale))}
+.coach-selection span,.coach-meta,.coach-toggle{font-size:calc(8px * var(--coach-text-scale))}
+.coach-off-button{font-size:calc(9px * var(--coach-text-scale))}
