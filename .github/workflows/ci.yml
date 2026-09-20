@@ -43,6 +43,8 @@ jobs:
             script: test:e2e:multiplayer:match
           - name: 2h2b
             script: test:e2e:multiplayer:match:2h2b
+          - name: takeover
+            script: test:e2e:multiplayer:match:takeover
     name: multiplayer-full-match-${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
