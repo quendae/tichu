@@ -25,6 +25,26 @@ async function renderRoom(page,{seat=1,isHost=false,fillBots=true,allConnected=f
   },{seat,isHost,fillBots,allConnected});
 }
 
+async function prepareActiveGame(page){
+  await page.goto('/');
+  await page.evaluate(()=>{
+    const mp=window.tichu.mp;
+    mp.active=true;
+    mp.session={id:'p0',nickname:'Ala'};
+    mp.seat=0;
+    mp.room={
+      id:'ABCD-EFGH',status:'in_game',ownerSessionId:'p0',game:'tichu',
+      players:[
+        {id:'p0',nickname:'Ala',connected:true},
+        {id:'p1',nickname:'Bartek',connected:true},
+        {id:'p2',nickname:'Celina',connected:true},
+        {id:'p3',nickname:'Darek',connected:true},
+      ],
+    };
+    mp.scheduleReconnect=()=>{};
+  });
+}
+
 test('multiplayer setup leads with Quick Play and keeps room creation secondary',async({page})=>{
   await renderShell(page);
   const modal=page.locator('#mp-modal');
@@ -118,4 +138,82 @@ test('multiplayer modal fits a phone viewport without horizontal overflow',async
   expect(geometry.left).toBeGreaterThanOrEqual(0);
   expect(geometry.right).toBeLessThanOrEqual(geometry.viewport);
   expect(geometry.scrollWidth).toBeLessThanOrEqual(geometry.clientWidth+1);
+});
+
+test('active multiplayer shows a reconnect banner when its socket is lost',async({page})=>{
+  await prepareActiveGame(page);
+  await page.evaluate(()=>window.tichu.mp.onSocketClosed?.());
+  const banner=page.locator('#mp-connection-banner');
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText('Utracono połączenie');
+  await expect(banner).toContainText('ponowne łączenie');
+});
+
+test('presence shows server countdown, bot takeover and a short return notice',async({page})=>{
+  await prepareActiveGame(page);
+  await page.evaluate(()=>{
+    const mp=window.tichu.mp;
+    mp.handle({
+      type:'game.presence',roomId:'ABCD-EFGH',botSeats:[],hostSessionId:'p0',authoritative:true,
+      presence:[
+        {sessionId:'p0',seat:0,nickname:'Ala',connected:true,graceDeadline:null,botActive:false},
+        {sessionId:'p1',seat:1,nickname:'Bartek',connected:false,graceDeadline:Date.now()+60_000,botActive:false},
+        {sessionId:'p2',seat:2,nickname:'Celina',connected:true,graceDeadline:null,botActive:false},
+        {sessionId:'p3',seat:3,nickname:'Darek',connected:true,graceDeadline:null,botActive:false},
+      ],
+    });
+  });
+  const chip=page.locator('.seat[data-seat="1"] .mp-presence-chip');
+  await expect(chip).toContainText('ROZŁĄCZONY');
+  await expect(chip).toContainText(/bot za (59|60) s/);
+
+  await page.evaluate(()=>{
+    const mp=window.tichu.mp;
+    mp.handle({
+      type:'game.presence',roomId:'ABCD-EFGH',botSeats:[1],hostSessionId:'p0',authoritative:true,
+      presence:[
+        {sessionId:'p0',seat:0,nickname:'Ala',connected:true,graceDeadline:null,botActive:false},
+        {sessionId:'p1',seat:1,nickname:'Bartek',connected:false,graceDeadline:null,botActive:true},
+        {sessionId:'p2',seat:2,nickname:'Celina',connected:true,graceDeadline:null,botActive:false},
+        {sessionId:'p3',seat:3,nickname:'Darek',connected:true,graceDeadline:null,botActive:false},
+      ],
+    });
+  });
+  await expect(chip).toContainText('BOT GRA ZA GRACZA');
+
+  await page.evaluate(()=>window.tichu.mp.handle({
+    type:'game.player.connection',roomId:'ABCD-EFGH',sessionId:'p1',seat:1,nickname:'Bartek',connected:true,reclaimedFromBot:true,botSeats:[],hostSessionId:'p0',authoritative:true,
+  }));
+  await expect(chip).toContainText('GRACZ WRÓCIŁ');
+});
+
+test('round end separates round points from the match score and gives one next action',async({page})=>{
+  await page.goto('/');
+  await page.evaluate(()=>{
+    Object.assign(window.tichu.game.state,{phase:'round-end',round:4,roundScore:[120,-20],scores:[640,510]});
+    window.tichu.game.emit();
+  });
+  const summary=page.locator('#round-summary');
+  await expect(summary).toBeVisible();
+  await expect(summary.locator('.summary-kicker')).toHaveText('RUNDA 4 ZAKOŃCZONA');
+  await expect(summary.locator('.summary-round-score')).toContainText('120');
+  await expect(summary.locator('.summary-round-score')).toContainText('-20');
+  await expect(summary.locator('.summary-match-score')).toContainText('640');
+  await expect(summary.locator('.summary-match-score')).toContainText('510');
+  await expect(summary.getByRole('button')).toHaveText('Graj następną rundę');
+});
+
+test('match end has an explicit outcome, final score and rematch action',async({page})=>{
+  await page.goto('/');
+  await page.evaluate(()=>{
+    Object.assign(window.tichu.game.state,{phase:'match-end',winnerTeam:0,scores:[1030,780]});
+    window.tichu.game.emit();
+  });
+  const summary=page.locator('#round-summary');
+  await expect(summary).toBeVisible();
+  await expect(summary.locator('.summary-outcome')).toHaveText('ZWYCIĘSTWO');
+  await expect(summary.getByRole('heading',{level:2})).toHaveText('Wygrywacie mecz!');
+  await expect(summary.locator('.summary-match-score')).toContainText('1030');
+  await expect(summary.locator('.summary-match-score')).toContainText('780');
+  await expect(summary.getByRole('button')).toHaveText('Zagraj ponownie');
 });
