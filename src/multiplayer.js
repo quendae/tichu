@@ -3,6 +3,10 @@ const GAME_ID='tichu';
 const SESSION_KEY='tichu.qqnd.session.v1';
 const TIMEOUT=12000;
 
+const html=value=>String(value??'').replace(/[&<>"']/g,char=>({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',
+}[char]));
+
 export class MultiplayerClient {
   constructor(game){
     this.game=game;this.socket=null;this.socketPromise=null;this.waiters=[];
@@ -12,6 +16,7 @@ export class MultiplayerClient {
     this.rebaseNextState=true;this.pendingVisualState=null;
     window.addEventListener('online',()=>this.scheduleReconnect());
   }
+
   el(id){return document.getElementById(id)}
   normalizeNick(v){return String(v||'').normalize('NFKC').replace(/\s+/g,' ').trim().slice(0,20)}
   stored(){try{return JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch{return null}}
@@ -21,38 +26,300 @@ export class MultiplayerClient {
   waiter(types,pred=()=>true){types=new Set(Array.isArray(types)?types:[types]);return new Promise((resolve,reject)=>{const w={types,pred,resolve,reject};w.timer=setTimeout(()=>{this.waiters=this.waiters.filter(x=>x!==w);reject(new Error('timeout'))},TIMEOUT);this.waiters.push(w)})}
   settle(m){for(const w of [...this.waiters]){if(m.type==='error'){clearTimeout(w.timer);this.waiters=this.waiters.filter(x=>x!==w);w.reject(new Error(m.code||'server_error'));continue}if(w.types.has(m.type)&&w.pred(m)){clearTimeout(w.timer);this.waiters=this.waiters.filter(x=>x!==w);w.resolve(m)}}}
   async request(msg,types,pred){await this.ensureSocket();const p=this.waiter(types,pred);this.send(msg);return p}
+
   ensureSocket(){
-    if(this.socket?.readyState===WebSocket.OPEN)return Promise.resolve(this.socket);if(this.socketPromise)return this.socketPromise;
-    this.socketPromise=new Promise((resolve,reject)=>{const ws=new WebSocket(WS_URL);this.socket=ws;let opened=false;const timer=setTimeout(()=>{if(!opened){try{ws.close()}catch{}reject(new Error('timeout'))}},TIMEOUT);ws.onopen=()=>{opened=true};ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='hello'){clearTimeout(timer);resolve(ws)}this.settle(m);this.handle(m)};ws.onerror=()=>{if(!opened)reject(new Error('websocket_error'))};ws.onclose=()=>{this.socket=null;this.socketPromise=null;this.session=null;if(this.active){this.rebaseNextState=true;this.scheduleReconnect()}}}).finally(()=>this.socketPromise=null);return this.socketPromise;
+    if(this.socket?.readyState===WebSocket.OPEN)return Promise.resolve(this.socket);
+    if(this.socketPromise)return this.socketPromise;
+    this.socketPromise=new Promise((resolve,reject)=>{
+      const ws=new WebSocket(WS_URL);this.socket=ws;let opened=false;
+      const timer=setTimeout(()=>{if(!opened){try{ws.close()}catch{}reject(new Error('timeout'))}},TIMEOUT);
+      ws.onopen=()=>{opened=true};
+      ws.onmessage=e=>{let m;try{m=JSON.parse(e.data)}catch{return}if(m.type==='hello'){clearTimeout(timer);resolve(ws)}this.settle(m);this.handle(m)};
+      ws.onerror=()=>{if(!opened)reject(new Error('websocket_error'))};
+      ws.onclose=()=>{this.socket=null;this.socketPromise=null;this.session=null;if(this.active){this.rebaseNextState=true;this.scheduleReconnect()}};
+    }).finally(()=>this.socketPromise=null);
+    return this.socketPromise;
   }
+
   scheduleReconnect(){if(this.reconnectTimer)return;this.reconnectTimer=setTimeout(async()=>{this.reconnectTimer=null;try{await this.ensureSocket();await this.resume(true);if(this.room?.status==='in_game')this.send({type:'game.state.get',roomId:this.room.id})}catch{this.scheduleReconnect()}},1300)}
-  async resume(silent=false){if(this.session)return this.session;const st=this.stored();if(!st)return null;try{const m=await this.request({type:'session.resume',sessionId:st.sessionId,resumeToken:st.resumeToken},'session.resumed');this.session=m.session;this.resumeToken=st.resumeToken;const room=(m.rooms||[]).find(r=>r.game===GAME_ID);if(room){this.syncRoom(room);if(room.status==='in_game'){this.active=true;this.send({type:'game.state.get',roomId:room.id})}}if(!silent)this.renderLobby();return this.session}catch(e){if(/invalid_session|expired/.test(String(e.message))){this.clearStored();return null}throw e}}
-  async ensureSession(nick){nick=this.normalizeNick(nick);if(nick.length<3)throw new Error('Nickname needs at least 3 characters.');await this.ensureSocket();if(!this.session)await this.resume(true);if(this.session?.nickname===nick)return this.session;if(this.session&&this.room)throw new Error('Leave current room before changing nickname.');const m=await this.request({type:'session.create',nickname:nick},'session.created');this.session=m.session;this.resumeToken=m.resumeToken;this.store();return this.session}
-  seatFor(id){return this.room?.players?.findIndex(p=>p.id===id)??-1}
-  syncRoom(room){if(!room||room.game!==GAME_ID)return;if(this.room?.id!==room.id){this.stateSeq=0;this.rebaseNextState=true}this.room=room;this.hostId=room.ownerSessionId;this.seat=this.session?this.seatFor(this.session.id):null;this.isHost=this.session?.id===this.hostId;if(room.status==='in_game')this.active=true;this.renderLobby()}
-  async openLobby(){this.renderShell();try{await this.ensureSocket();await this.resume(true);await this.refreshRooms();this.renderLobby()}catch(e){this.status(this.friendly(e),true)}}
-  renderShell(){
-    const root=this.el('modal-root');if(!root)return;root.innerHTML=`<div class="modal-backdrop"><section class="modal" id="mp-modal"><h2>Online Tichu</h2><p>Server-authoritative QQND multiplayer: private hands, reconnect grace, bot takeover, public/private rooms and Quick Play.</p><div id="mp-setup"><div class="choice-grid"><div class="choice-card"><h3>Create room</h3><input id="mp-nick" placeholder="Nickname" maxlength="20"><select id="mp-vis"><option value="public">Public</option><option value="private">Private</option></select><div style="display:flex;gap:8px"><button id="mp-create" class="primary">Create</button><button id="mp-quick" class="secondary">Quick Play</button></div></div><div class="choice-card"><h3>Join by code</h3><input id="mp-code" placeholder="ABCD-EFGH" maxlength="9"><button id="mp-join" class="primary">Join</button></div></div><div style="display:flex;justify-content:space-between;align-items:center"><h3>Public rooms</h3><button id="mp-refresh" class="ghost">Refresh</button></div><div id="mp-rooms"></div></div><div id="mp-room" class="hidden"><div class="choice-card"><h3>Room <span id="mp-room-code"></span></h3><div id="mp-seats"></div><label style="display:block;margin-top:10px"><input type="checkbox" id="mp-bots" checked> Fill empty seats with bots</label></div><div class="modal-actions"><button id="mp-leave" class="secondary">Leave</button><button id="mp-start" class="primary">Start</button></div></div><p id="mp-status"></p><div class="modal-actions"><button id="mp-close" class="ghost">Close</button></div></section></div>`;
-    const st=this.stored();if(st?.nickname)this.el('mp-nick').value=st.nickname;this.el('mp-create').onclick=()=>this.createRoom();this.el('mp-join').onclick=()=>this.joinRoom();this.el('mp-quick').onclick=()=>this.toggleQuickPlay();this.el('mp-refresh').onclick=()=>this.refreshRooms();this.el('mp-close').onclick=()=>{root.innerHTML=''};this.el('mp-leave').onclick=()=>this.leave();this.el('mp-start').onclick=()=>this.start();this.el('mp-bots').onchange=e=>{this.fillBots=e.target.checked;this.renderLobby()};root.addEventListener('click',e=>{const b=e.target.closest('[data-room]');if(b)this.joinRoom(b.dataset.room)});
+
+  async resume(silent=false){
+    if(this.session)return this.session;
+    const st=this.stored();if(!st)return null;
+    try{
+      const m=await this.request({type:'session.resume',sessionId:st.sessionId,resumeToken:st.resumeToken},'session.resumed');
+      this.session=m.session;this.resumeToken=st.resumeToken;
+      const room=(m.rooms||[]).find(r=>r.game===GAME_ID);
+      if(room){this.syncRoom(room);if(room.status==='in_game'){this.active=true;this.send({type:'game.state.get',roomId:room.id})}}
+      if(!silent)this.renderLobby();
+      return this.session;
+    }catch(e){
+      if(/invalid_session|expired/.test(String(e.message))){this.clearStored();return null}
+      throw e;
+    }
   }
-  status(text,error=false){const n=this.el('mp-status');if(n){n.textContent=text||'';n.style.color=error?'#ff9e93':''}}
-  renderLobby(){if(!this.el('mp-modal'))return;const inRoom=!!this.room;this.el('mp-setup')?.classList.toggle('hidden',inRoom);this.el('mp-room')?.classList.toggle('hidden',!inRoom);const quick=this.el('mp-quick');if(quick)quick.textContent=this.queued?'Cancel Quick Play':'Quick Play';if(!inRoom)return this.renderRooms();this.el('mp-room-code').textContent=this.room.id;const players=this.room.players||[];this.el('mp-seats').innerHTML=[0,1,2,3].map(i=>{const p=players[i],bot=!p&&this.fillBots;return `<div class="lobby-seat ${p?.connected||bot?'connected':''}" style="padding:7px 0;border-bottom:1px solid #ffffff12"><b>${p?.nickname||(bot?'Bot':'Open seat')}</b><small style="display:block;color:#9eb0a7">${i===0?'Host':i===2?'Partner seat':'Opponent seat'}${p&&!p.connected?' · offline':''}</small></div>`}).join('');const start=this.el('mp-start');start.style.display=this.isHost&&this.room.status!=='in_game'?'':'none';const bots=this.el('mp-bots');bots.disabled=!this.isHost||this.room.status==='in_game';bots.checked=this.fillBots;const ready=players.filter(p=>p.connected).length+(this.fillBots?4-players.length:0)===4;start.disabled=!ready;this.status(this.room.status==='in_game'?'Game in progress.':this.isHost?(ready?'Table ready.':'Waiting for four seats.'):'Waiting for host.')}
-  renderRooms(){const n=this.el('mp-rooms');if(!n)return;const rooms=this.rooms.filter(r=>r.game===GAME_ID&&r.visibility==='public');n.innerHTML=rooms.length?rooms.map(r=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border:1px solid #ffffff16;border-radius:10px;margin:6px 0"><span><b>${r.name||'Tichu'}</b><small style="display:block;color:#9eb0a7">${r.id} · ${r.players?.length||0}/4</small></span><button class="ghost" data-room="${r.id}" ${r.status==='in_game'?'disabled':''}>Join</button></div>`).join(''):`<p>No public Tichu rooms.</p>`}
+
+  async ensureSession(nick){
+    nick=this.normalizeNick(nick);
+    if(nick.length<3)throw new Error('Nickname needs at least 3 characters.');
+    await this.ensureSocket();
+    if(!this.session)await this.resume(true);
+    if(this.session?.nickname===nick)return this.session;
+    if(this.session&&this.room)throw new Error('Leave current room before changing nickname.');
+    const m=await this.request({type:'session.create',nickname:nick},'session.created');
+    this.session=m.session;this.resumeToken=m.resumeToken;this.store();return this.session;
+  }
+
+  seatFor(id){return this.room?.players?.findIndex(p=>p.id===id)??-1}
+  viewerSeat(){const own=Number.isInteger(this.seat)&&this.seat>=0?this.seat:this.seatFor(this.session?.id);return own>=0?own:0}
+  relativeSeatRole(actual){const diff=(actual-this.viewerSeat()+4)%4;return diff===0?'TY':diff===2?'PARTNER':'RYWAL'}
+
+  syncRoom(room){
+    if(!room||room.game!==GAME_ID)return;
+    if(this.room?.id!==room.id){this.stateSeq=0;this.rebaseNextState=true}
+    this.room=room;this.hostId=room.ownerSessionId;this.seat=this.session?this.seatFor(this.session.id):null;this.isHost=this.session?.id===this.hostId;
+    if(room.status==='in_game')this.active=true;
+    this.renderLobby();
+  }
+
+  async openLobby(){this.renderShell();try{await this.ensureSocket();await this.resume(true);await this.refreshRooms();this.renderLobby()}catch(e){this.status(this.friendly(e),true)}}
+
+  renderShell(){
+    const root=this.el('modal-root');if(!root)return;
+    root.innerHTML=`
+      <div class="modal-backdrop">
+        <section class="modal mp-modal" id="mp-modal" aria-label="Tichu online">
+          <header class="mp-heading">
+            <div>
+              <small>QQND MULTIPLAYER</small>
+              <h2>Tichu online</h2>
+              <p>Znajdź stół albo zagraj ze znajomymi.</p>
+            </div>
+          </header>
+
+          <div id="mp-setup" class="mp-setup">
+            <section class="mp-quick-card">
+              <label for="mp-nick">Twój nick</label>
+              <input id="mp-nick" placeholder="Twój nick" maxlength="20" autocomplete="nickname">
+              <button id="mp-quick" class="mp-primary-action">Szybka gra</button>
+              <div id="mp-queue-state" class="mp-queue-state" aria-live="polite"></div>
+            </section>
+
+            <div class="mp-secondary-grid">
+              <section class="choice-card">
+                <h3>Dołącz kodem</h3>
+                <label class="mp-field-label" for="mp-code">Kod pokoju</label>
+                <input id="mp-code" placeholder="ABCD-EFGH" maxlength="9" autocomplete="off">
+                <button id="mp-join" class="secondary">Dołącz</button>
+              </section>
+              <section class="choice-card">
+                <h3>Utwórz pokój</h3>
+                <label class="mp-field-label" for="mp-vis">Widoczność</label>
+                <select id="mp-vis"><option value="public">Publiczny</option><option value="private">Prywatny</option></select>
+                <button id="mp-create" class="secondary">Utwórz</button>
+              </section>
+            </div>
+
+            <section class="mp-public">
+              <div class="mp-section-head">
+                <div><small>PUBLICZNE</small><h3>Otwarte stoły</h3></div>
+                <button id="mp-refresh" class="ghost">Odśwież</button>
+              </div>
+              <div id="mp-rooms" class="mp-room-list"></div>
+            </section>
+          </div>
+
+          <div id="mp-room" class="mp-lobby hidden">
+            <div class="mp-room-head">
+              <div>
+                <small>POKÓJ</small>
+                <div class="mp-room-code-row"><strong id="mp-room-code"></strong><button id="mp-copy-code" class="ghost">Kopiuj kod</button></div>
+              </div>
+              <p id="mp-lobby-state" class="mp-lobby-state"></p>
+            </div>
+            <div id="mp-seats" class="mp-seats"></div>
+            <label class="mp-bots-option"><input type="checkbox" id="mp-bots" checked> Wypełnij wolne miejsca botami</label>
+            <div class="mp-lobby-actions"><button id="mp-leave" class="secondary">Opuść</button><button id="mp-start" class="primary">Rozpocznij</button></div>
+          </div>
+
+          <p id="mp-status" class="mp-status" aria-live="polite"></p>
+          <div class="modal-actions"><button id="mp-close" class="ghost">Zamknij</button></div>
+        </section>
+      </div>`;
+
+    const st=this.stored();if(st?.nickname)this.el('mp-nick').value=st.nickname;
+    this.el('mp-create').onclick=()=>this.createRoom();
+    this.el('mp-join').onclick=()=>this.joinRoom();
+    this.el('mp-quick').onclick=()=>this.toggleQuickPlay();
+    this.el('mp-refresh').onclick=()=>this.refreshRooms();
+    this.el('mp-close').onclick=()=>this.closeLobby();
+    this.el('mp-copy-code').onclick=()=>this.copyRoomCode();
+    this.el('mp-leave').onclick=()=>this.leave();
+    this.el('mp-start').onclick=()=>this.start();
+    this.el('mp-bots').onchange=e=>{this.fillBots=e.target.checked;this.renderLobby()};
+    root.onclick=e=>{const b=e.target.closest('[data-room]');if(b&&!b.disabled)this.joinRoom(b.dataset.room)};
+    this.renderLobby();
+  }
+
+  closeLobby(){
+    if(this.queued){try{this.send({type:'queue.leave',game:GAME_ID})}catch{}this.queued=false}
+    const root=this.el('modal-root');if(root)root.innerHTML='';
+  }
+
+  async copyRoomCode(){
+    const code=this.room?.id;if(!code)return;
+    try{await navigator.clipboard?.writeText(code);this.status('Kod pokoju skopiowany.')}catch{this.status(`Kod pokoju: ${code}`)}
+  }
+
+  status(text,error=false){
+    const n=this.el('mp-status');if(!n)return;
+    n.textContent=text||'';n.classList.toggle('error',!!error);
+  }
+
+  renderLobby(){
+    if(!this.el('mp-modal'))return;
+    const inRoom=!!this.room;
+    this.el('mp-setup')?.classList.toggle('hidden',inRoom);
+    this.el('mp-room')?.classList.toggle('hidden',!inRoom);
+
+    const quick=this.el('mp-quick');
+    if(quick){quick.textContent=this.queued?'Anuluj wyszukiwanie':'Szybka gra';quick.classList.toggle('searching',this.queued)}
+    const queueState=this.el('mp-queue-state');
+    if(queueState){
+      queueState.textContent=this.queued?'Szukam stołu… Gdy zbiorą się 4 osoby, gra rozpocznie się automatycznie.':'Najprostszy sposób, by zacząć mecz.';
+      queueState.classList.toggle('active',this.queued);
+    }
+
+    if(!inRoom){this.renderRooms();return}
+
+    this.el('mp-room-code').textContent=this.room.id;
+    const players=this.room.players||[];
+    const hostId=this.room.ownerSessionId||this.hostId;
+    this.el('mp-seats').innerHTML=[0,1,2,3].map(i=>{
+      const p=players[i];
+      const bot=!p&&this.fillBots;
+      const role=this.relativeSeatRole(i);
+      const name=p?.nickname||(bot?'Bot':'Wolne miejsce');
+      const baseStatus=p?(p.connected?'ONLINE':'OFFLINE'):(bot?'BOT':'WOLNE');
+      const status=p?.id===hostId?`${baseStatus} · HOST`:baseStatus;
+      const stateClass=p?.connected?'connected':p?'offline':bot?'bot':'open';
+      return `<div class="mp-seat ${stateClass}" data-seat="${i}"><div class="mp-seat-head"><span class="mp-seat-role">${role}</span><span class="mp-seat-status">${status}</span></div><b class="mp-seat-name">${html(name)}</b></div>`;
+    }).join('');
+
+    const start=this.el('mp-start');
+    start.classList.toggle('hidden',!this.isHost||this.room.status==='in_game');
+    const bots=this.el('mp-bots');
+    bots.disabled=!this.isHost||this.room.status==='in_game';bots.checked=this.fillBots;
+    const connected=[0,1,2,3].filter(i=>players[i]?.connected).length;
+    const empty=[0,1,2,3].filter(i=>!players[i]).length;
+    const ready=connected+(this.fillBots?empty:0)===4;
+    start.disabled=!ready;
+
+    const lobbyState=this.el('mp-lobby-state');
+    if(lobbyState)lobbyState.textContent=this.room.status==='in_game'?'Gra trwa.':this.isHost?(ready?'Stół gotowy · możesz rozpocząć.':'Czekamy na graczy.'):'Czekamy na hosta.';
+  }
+
+  renderRooms(){
+    const n=this.el('mp-rooms');if(!n)return;
+    const rooms=this.rooms.filter(r=>r.game===GAME_ID&&r.visibility==='public');
+    n.innerHTML=rooms.length?rooms.map(r=>{
+      const playing=r.status==='in_game';
+      const count=Math.min(4,r.players?.length||0);
+      return `<article class="mp-room-card"><div class="mp-room-copy"><b>${html(r.name||'Tichu')}</b><div class="mp-room-meta"><span>${html(r.id)}</span><span>${count}/4</span><span class="mp-room-state ${playing?'playing':'open'}">${playing?'W GRZE':'OCZEKUJE'}</span></div></div><button class="ghost" data-room="${html(r.id)}" ${playing?'disabled':''}>Dołącz</button></article>`;
+    }).join(''):`<p class="mp-empty">Brak publicznych stołów. Utwórz własny albo wybierz Szybką grę.</p>`;
+  }
+
   async refreshRooms(){try{await this.ensureSocket();this.send({type:'rooms.list',game:GAME_ID})}catch(e){this.status(this.friendly(e),true)}}
-  async createRoom(){try{const nick=this.el('mp-nick').value;await this.ensureSession(nick);const vis=this.el('mp-vis').value==='private'?'private':'public';const m=await this.request({type:'room.create',game:GAME_ID,name:`${this.session.nickname} · Tichu`,visibility:vis},'room.created');this.syncRoom(m.room)}catch(e){this.status(this.friendly(e),true)}}
+
+  async createRoom(){
+    try{
+      const nick=this.el('mp-nick').value;await this.ensureSession(nick);
+      const vis=this.el('mp-vis').value==='private'?'private':'public';
+      const m=await this.request({type:'room.create',game:GAME_ID,name:`${this.session.nickname} · Tichu`,visibility:vis},'room.created');
+      this.syncRoom(m.room);
+    }catch(e){this.status(this.friendly(e),true)}
+  }
+
   normalizeCode(v){const x=String(v||'').toUpperCase().replace(/[^A-Z2-9]/g,'');return x.length===8?`${x.slice(0,4)}-${x.slice(4)}`:String(v||'').toUpperCase()}
-  async joinRoom(id=null){try{const nick=this.el('mp-nick').value||this.stored()?.nickname||'Player';await this.ensureSession(nick);const code=this.normalizeCode(id||this.el('mp-code').value);const m=await this.request({type:'room.join',roomId:code},'room.joined',x=>x.room?.id===code);this.syncRoom(m.room)}catch(e){this.status(this.friendly(e),true)}}
-  async toggleQuickPlay(){try{await this.ensureSocket();if(this.queued){this.send({type:'queue.leave',game:GAME_ID});this.queued=false;this.renderLobby();return}const nick=this.el('mp-nick')?.value||this.stored()?.nickname||'Player';await this.ensureSession(nick);this.send({type:'queue.join',game:GAME_ID});this.queued=true;this.renderLobby();this.status('Searching for a 4-player Tichu table…')}catch(e){this.status(this.friendly(e),true)}}
-  async leave(){try{if(this.queued)this.send({type:'queue.leave',game:GAME_ID});if(this.room)this.send({type:'room.leave',roomId:this.room.id})}catch{}this.active=false;this.authoritative=false;this.queued=false;this.room=null;this.seat=null;this.isHost=false;this.stateSeq=0;this.rebaseNextState=true;this.game.state.multiplayer=false;this.game.configurePlayers(['You','Mei','Lin','Wei'],[1,2,3]);this.renderLobby();this.refreshRooms()}
-  async start(){if(!this.isHost||!this.room)return;const humans=this.room.players||[],botCount=this.fillBots?Math.max(0,4-humans.length):0;if(humans.filter(p=>p.connected).length+botCount!==4)return;try{await this.request({type:'game.start',roomId:this.room.id,botCount,settings:{}},'game.started',m=>m.room?.id===this.room.id)}catch(e){this.status(this.friendly(e),true)}}
-  async action(type,payload={}){if(!this.active||!this.room)return false;const actualSeat=Number.isInteger(this.seat)?this.seat:0;let outgoing={...payload};if(type==='exchange'&&outgoing.map){const mapped={};for(const [localTarget,id] of Object.entries(outgoing.map))mapped[(actualSeat+Number(localTarget))%4]=id;outgoing.map=mapped}if(type==='dragon'&&Number.isInteger(outgoing.seat))outgoing.seat=(actualSeat+outgoing.seat)%4;try{this.send({type:'game.action',roomId:this.room.id,action:type,payload:outgoing,actionId:`${Date.now()}-${Math.random().toString(36).slice(2)}`});return true}catch(e){this.status(this.friendly(e),true);return false}}
+
+  async joinRoom(id=null){
+    try{
+      const nick=this.el('mp-nick').value||this.stored()?.nickname||'Player';await this.ensureSession(nick);
+      const code=this.normalizeCode(id||this.el('mp-code').value);
+      const m=await this.request({type:'room.join',roomId:code},'room.joined',x=>x.room?.id===code);this.syncRoom(m.room);
+    }catch(e){this.status(this.friendly(e),true)}
+  }
+
+  async toggleQuickPlay(){
+    try{
+      await this.ensureSocket();
+      if(this.queued){this.send({type:'queue.leave',game:GAME_ID});this.queued=false;this.renderLobby();this.status('Wyszukiwanie anulowane.');return}
+      const nick=this.el('mp-nick')?.value||this.stored()?.nickname||'Player';
+      await this.ensureSession(nick);this.send({type:'queue.join',game:GAME_ID});this.queued=true;this.renderLobby();this.status('Szukam stołu…');
+    }catch(e){this.status(this.friendly(e),true)}
+  }
+
+  async leave(){
+    try{if(this.queued)this.send({type:'queue.leave',game:GAME_ID});if(this.room)this.send({type:'room.leave',roomId:this.room.id})}catch{}
+    this.active=false;this.authoritative=false;this.queued=false;this.room=null;this.seat=null;this.isHost=false;this.stateSeq=0;this.rebaseNextState=true;
+    this.game.state.multiplayer=false;this.game.configurePlayers(['You','Mei','Lin','Wei'],[1,2,3]);this.renderLobby();this.refreshRooms();
+  }
+
+  async start(){
+    if(!this.isHost||!this.room)return;
+    const humans=this.room.players||[],botCount=this.fillBots?Math.max(0,4-humans.length):0;
+    if(humans.filter(p=>p.connected).length+botCount!==4)return;
+    try{await this.request({type:'game.start',roomId:this.room.id,botCount,settings:{}},'game.started',m=>m.room?.id===this.room.id)}catch(e){this.status(this.friendly(e),true)}
+  }
+
+  async action(type,payload={}){
+    if(!this.active||!this.room)return false;
+    const actualSeat=Number.isInteger(this.seat)?this.seat:0;let outgoing={...payload};
+    if(type==='exchange'&&outgoing.map){const mapped={};for(const [localTarget,id] of Object.entries(outgoing.map))mapped[(actualSeat+Number(localTarget))%4]=id;outgoing.map=mapped}
+    if(type==='dragon'&&Number.isInteger(outgoing.seat))outgoing.seat=(actualSeat+outgoing.seat)%4;
+    try{this.send({type:'game.action',roomId:this.room.id,action:type,payload:outgoing,actionId:`${Date.now()}-${Math.random().toString(36).slice(2)}`});return true}catch(e){this.status(this.friendly(e),true);return false}
+  }
+
   handle(m){
-    if(m.type==='session.created'){this.session=m.session;this.resumeToken=m.resumeToken;this.store();return}if(m.type==='session.resumed'){this.rebaseNextState=true;this.session=m.session;const r=(m.rooms||[]).find(x=>x.game===GAME_ID);if(r)this.syncRoom(r);return}if(['room.created','room.joined','room.updated'].includes(m.type)&&m.room?.game===GAME_ID){this.syncRoom(m.room);return}if(m.type==='room.left'&&this.room?.id===m.roomId){if(!this.active){this.room=null;this.renderLobby()}return}if(m.type==='rooms.list'){this.rooms=m.rooms||[];this.renderRooms();return}if(m.type==='queue.joined'){this.queued=true;this.renderLobby();this.status(`Quick Play${Number.isInteger(m.position)?` · #${m.position}`:''}`);return}if(m.type==='queue.left'){this.queued=false;this.renderLobby();return}if(m.type==='match.found'&&m.game===GAME_ID){this.queued=false;this.syncRoom(m.room);this.status('Match found.');return}
+    if(m.type==='session.created'){this.session=m.session;this.resumeToken=m.resumeToken;this.store();return}
+    if(m.type==='session.resumed'){this.rebaseNextState=true;this.session=m.session;const r=(m.rooms||[]).find(x=>x.game===GAME_ID);if(r)this.syncRoom(r);return}
+    if(['room.created','room.joined','room.updated'].includes(m.type)&&m.room?.game===GAME_ID){this.syncRoom(m.room);return}
+    if(m.type==='room.left'&&this.room?.id===m.roomId){if(!this.active){this.room=null;this.renderLobby()}return}
+    if(m.type==='rooms.list'){this.rooms=m.rooms||[];this.renderRooms();return}
+    if(m.type==='queue.joined'){this.queued=true;this.renderLobby();this.status(Number.isInteger(m.position)?`Szukam stołu · pozycja ${m.position}.`:'Szukam stołu…');return}
+    if(m.type==='queue.left'){this.queued=false;this.renderLobby();return}
+    if(m.type==='match.found'&&m.game===GAME_ID){this.queued=false;this.syncRoom(m.room);this.status('Znaleziono stół.');return}
     if(m.type==='game.started'&&m.room?.game===GAME_ID){this.stateSeq=0;this.rebaseNextState=true;this.active=true;this.authoritative=!!m.authoritative;this.seat=m.seat;this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||[];this.syncRoom(m.room);document.getElementById('modal-root').innerHTML='';this.send({type:'game.state.get',roomId:m.room.id});return}
     if(m.type==='game.state'&&this.room?.id===m.roomId){if(Number.isInteger(m.viewerSeat))this.seat=m.viewerSeat;this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;this.authoritative=!!m.authoritative;this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||this.presence;this.applyState(m.state,m.revision);return}
-    if(m.type==='game.presence'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||[];this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;return}if(m.type==='game.player.connection'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);return}if(m.type==='game.player.bot_takeover'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);return}if(m.type==='game.host.changed'&&this.room?.id===m.roomId){this.hostId=m.hostSessionId;this.isHost=this.session?.id===this.hostId;this.botSeats=this.localBotSeats(m.botSeats||[]);return}if(m.type==='error')this.status(this.friendly(m.code),true)
+    if(m.type==='game.presence'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);this.presence=m.presence||[];this.hostId=m.hostSessionId||this.hostId;this.isHost=this.session?.id===this.hostId;return}
+    if(m.type==='game.player.connection'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);return}
+    if(m.type==='game.player.bot_takeover'&&this.room?.id===m.roomId){this.botSeats=this.localBotSeats(m.botSeats||[]);return}
+    if(m.type==='game.host.changed'&&this.room?.id===m.roomId){this.hostId=m.hostSessionId;this.isHost=this.session?.id===this.hostId;this.botSeats=this.localBotSeats(m.botSeats||[]);return}
+    if(m.type==='error')this.status(this.friendly(m.code),true);
   }
+
   localBotSeats(serverSeats){const own=Number.isInteger(this.seat)?this.seat:0;return serverSeats.map(s=>(s-own+4)%4)}
-  applyState(snapshot,seq){if(!snapshot||!Number.isFinite(seq)||seq<=this.stateSeq)return;this.stateSeq=seq;clearTimeout(this.game.botTimer);const localSettings=this.game.state.settings;Object.assign(this.game.state,snapshot,{selected:new Set(),multiplayer:true,botSeats:[...this.botSeats],settings:localSettings});this.pendingVisualState={streamId:this.room?.id||'',revision:seq,rebase:this.rebaseNextState};this.rebaseNextState=false;try{this.game.emit()}finally{this.pendingVisualState=null}}
-  friendly(e){const m=String(e?.message||e||'');const map={unknown_game:'Tichu is not registered on QQND Server yet.',room_full:'Room is full.',room_not_found:'Room not found.',invalid_player_count:'The table needs four seats (humans + bots).',bots_not_supported:'This server build does not support Tichu bots yet.',timeout:'Server did not answer in time.',websocket_error:'Could not connect to QQND Server.',server_not_connected:'Server disconnected.',invalid_play:'That combination cannot be played here.',wish_must_be_fulfilled:'You can fulfill the Mah Jong wish and must do so.',not_your_turn:'It is not your turn.',seat_controlled_by_bot:'This seat is temporarily controlled by a bot.'};return map[m]||m||'Multiplayer error'}
+
+  applyState(snapshot,seq){
+    if(!snapshot||!Number.isFinite(seq)||seq<=this.stateSeq)return;
+    this.stateSeq=seq;clearTimeout(this.game.botTimer);const localSettings=this.game.state.settings;
+    Object.assign(this.game.state,snapshot,{selected:new Set(),multiplayer:true,botSeats:[...this.botSeats],settings:localSettings});
+    this.pendingVisualState={streamId:this.room?.id||'',revision:seq,rebase:this.rebaseNextState};this.rebaseNextState=false;
+    try{this.game.emit()}finally{this.pendingVisualState=null}
+  }
+
+  friendly(e){
+    const m=String(e?.message||e||'');
+    const map={
+      'Nickname needs at least 3 characters.':'Nick musi mieć co najmniej 3 znaki.',
+      'Leave current room before changing nickname.':'Opuść obecny pokój, zanim zmienisz nick.',
+      unknown_game:'Tichu nie jest jeszcze dostępne na serwerze QQND.',
+      room_full:'Ten pokój jest pełny.',room_not_found:'Nie znaleziono pokoju.',
+      invalid_player_count:'Do rozpoczęcia potrzebne są cztery miejsca (gracze lub boty).',
+      bots_not_supported:'Ta wersja serwera nie obsługuje jeszcze botów Tichu.',
+      timeout:'Serwer nie odpowiedział na czas.',websocket_error:'Nie udało się połączyć z serwerem QQND.',server_not_connected:'Utracono połączenie z serwerem.',
+      invalid_play:'Tej kombinacji nie można teraz zagrać.',wish_must_be_fulfilled:'Możesz spełnić życzenie Mah Jonga, więc musisz to zrobić.',not_your_turn:'To nie jest Twój ruch.',seat_controlled_by_bot:'To miejsce jest tymczasowo kontrolowane przez bota.',
+    };
+    return map[m]||m||'Błąd multiplayera';
+  }
 }
