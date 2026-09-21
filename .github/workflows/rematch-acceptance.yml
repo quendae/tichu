@@ -22,7 +22,7 @@ jobs:
       - run: npm install
       - run: npx playwright install --with-deps chromium
       - name: Full match and rematch acceptance
-        run: npx playwright test -c playwright.multiplayer.config.mjs tests/e2e-multiplayer/rematch.spec.mjs
+        run: npx playwright test -c playwright.soak.config.mjs tests/e2e-multiplayer/rematch.spec.mjs
       - name: Upload rematch diagnostics
         if: always()
         uses: actions/upload-artifact@v4
