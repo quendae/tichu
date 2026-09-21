@@ -14,7 +14,7 @@ export class MultiplayerClient {
     this.active=false;this.authoritative=false;this.isHost=false;this.rooms=[];this.fillBots=true;this.queued=false;
     this.stateSeq=0;this.reconnectTimer=null;this.botSeats=[];this.presence=[];
     this.rebaseNextState=true;this.pendingVisualState=null;
-    this.connectionState='connected';this.presenceTick=null;this.returnNotices=new Map();this.returnNoticeTimers=new Map();
+    this.connectionState='connected';this.presenceTick=null;this.returnNotices=new Map();this.returnNoticeTimers=new Map();this.gameStatusTimer=null;
     window.addEventListener('online',()=>this.scheduleReconnect());
   }
 
@@ -180,8 +180,11 @@ export class MultiplayerClient {
   }
 
   status(text,error=false){
-    const n=this.el('mp-status');if(!n)return;
-    n.textContent=text||'';n.classList.toggle('error',!!error);
+    const n=this.el('mp-status');
+    if(n){n.textContent=text||'';n.classList.toggle('error',!!error);return}
+    const toast=this.el('toast');if(!toast||!text)return;
+    toast.textContent=text;toast.classList.remove('hidden');
+    clearTimeout(this.gameStatusTimer);this.gameStatusTimer=setTimeout(()=>toast.classList.add('hidden'),2800);
   }
 
   renderLobby(){
