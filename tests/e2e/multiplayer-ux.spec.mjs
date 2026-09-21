@@ -217,3 +217,42 @@ test('match end has an explicit outcome, final score and rematch action',async({
   await expect(summary.locator('.summary-match-score')).toContainText('780');
   await expect(summary.getByRole('button')).toHaveText('Zagraj ponownie');
 });
+
+test('multiplayer match end lets only the host start a rematch',async({page})=>{
+  await page.goto('/');
+  await page.evaluate(()=>{
+    const mp=window.tichu.mp;
+    mp.active=true;
+    mp.isHost=false;
+    mp.room={id:'ABCD-EFGH',status:'finished',ownerSessionId:'p1',game:'tichu',players:[]};
+    Object.assign(window.tichu.game.state,{
+      phase:'match-end',winnerTeam:0,scores:[1030,780],multiplayer:true,multiplayerIsHost:false,
+    });
+    window.tichu.game.emit();
+  });
+
+  const summary=page.locator('#round-summary');
+  await expect(summary.getByRole('button',{name:'Zagraj ponownie'})).toHaveCount(0);
+  await expect(summary).toContainText('Czekamy, aż host rozpocznie rewanż');
+});
+
+test('multiplayer host rematch uses game.rematch instead of game.action new-match',async({page})=>{
+  await page.goto('/');
+  await page.evaluate(()=>{
+    const mp=window.tichu.mp;
+    mp.active=true;
+    mp.isHost=true;
+    mp.room={id:'ABCD-EFGH',status:'finished',ownerSessionId:'p0',game:'tichu',players:[]};
+    mp.sentForTest=[];
+    mp.send=message=>mp.sentForTest.push(message);
+    Object.assign(window.tichu.game.state,{
+      phase:'match-end',winnerTeam:0,scores:[1030,780],multiplayer:true,multiplayerIsHost:true,
+    });
+    window.tichu.game.emit();
+  });
+
+  await page.locator('#round-summary').getByRole('button',{name:'Zagraj ponownie'}).click();
+  const sent=await page.evaluate(()=>window.tichu.mp.sentForTest);
+  expect(sent).toContainEqual({type:'game.rematch',roomId:'ABCD-EFGH'});
+  expect(sent.some(message=>message.type==='game.action'&&message.action==='new-match')).toBe(false);
+});
