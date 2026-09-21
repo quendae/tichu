@@ -165,8 +165,15 @@ export async function attachDiagnostics(testInfo,clients,roomId,nicknames){
 export async function cleanupClients(clients){
   const errors=[];
   for(const client of clients){
-    try{await client.page.evaluate(()=>window.tichu?.mp?.room?window.tichu.mp.leave():null)}
-    catch(error){errors.push(`${client.label}:leave:${error.message}`)}
+    try{
+      await client.page.evaluate(async()=>{
+        const mp=window.tichu?.mp;
+        const roomId=mp?.room?.id;
+        if(!mp||!roomId)return null;
+        await mp.request({type:'room.leave',roomId},'room.left',message=>message.roomId===roomId);
+        return roomId;
+      });
+    }catch(error){errors.push(`${client.label}:leave:${error.message}`)}
   }
   for(const client of clients){
     try{await client.context.close()}
