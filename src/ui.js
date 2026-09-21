@@ -115,7 +115,7 @@ function submitExchange(){
 function coachHint(){const model=buildCoachModel(game.state,uiState);if(!model?.hintCardIds?.size){toast('W tej chwili nie ma ruchu do podpowiedzenia.');return}uiState.hintCardIds=new Set(model.hintCardIds);render()}
 function handleInline(action){
   if(action==='grand-call'||action==='grand-pass'){runAction('grand',{call:action==='grand-call'},()=>game.declareGrand(0,action==='grand-call'));return}
-  if(action==='exchange-confirm'){submitExchange();return}if(action==='next-round'){runAction('next-round',{},()=>game.nextRound());return}if(action==='new-match')runAction('new-match',{},()=>game.resetMatch());
+  if(action==='exchange-confirm'){submitExchange();return}if(action==='next-round'){runAction('next-round',{},()=>game.nextRound());return}if(action==='new-match'){if(mp.active){mp.rematch();return}game.resetMatch();return}
 }
 
 document.addEventListener('click',event=>{

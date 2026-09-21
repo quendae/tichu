@@ -14,7 +14,7 @@ export class MultiplayerClient {
     this.active=false;this.authoritative=false;this.isHost=false;this.rooms=[];this.fillBots=true;this.queued=false;
     this.stateSeq=0;this.reconnectTimer=null;this.botSeats=[];this.presence=[];
     this.rebaseNextState=true;this.pendingVisualState=null;
-    this.connectionState='connected';this.presenceTick=null;this.returnNotices=new Map();this.returnNoticeTimers=new Map();
+    this.connectionState='connected';this.presenceTick=null;this.returnNotices=new Map();this.returnNoticeTimers=new Map();this.gameStatusTimer=null;
     window.addEventListener('online',()=>this.scheduleReconnect());
   }
 
@@ -180,8 +180,11 @@ export class MultiplayerClient {
   }
 
   status(text,error=false){
-    const n=this.el('mp-status');if(!n)return;
-    n.textContent=text||'';n.classList.toggle('error',!!error);
+    const n=this.el('mp-status');
+    if(n){n.textContent=text||'';n.classList.toggle('error',!!error);return}
+    const toast=this.el('toast');if(!toast||!text)return;
+    toast.textContent=text;toast.classList.remove('hidden');
+    clearTimeout(this.gameStatusTimer);this.gameStatusTimer=setTimeout(()=>toast.classList.add('hidden'),2800);
   }
 
   renderLobby(){
@@ -337,6 +340,11 @@ export class MultiplayerClient {
     try{await this.request({type:'game.start',roomId:this.room.id,botCount,settings:{}},'game.started',m=>m.room?.id===this.room.id)}catch(e){this.status(this.friendly(e),true)}
   }
 
+  rematch(){
+    if(!this.active||!this.room||!this.isHost)return false;
+    try{this.send({type:'game.rematch',roomId:this.room.id});return true}catch(e){this.status(this.friendly(e),true);return false}
+  }
+
   async action(type,payload={}){
     if(!this.active||!this.room)return false;
     const actualSeat=Number.isInteger(this.seat)?this.seat:0;let outgoing={...payload};
@@ -368,7 +376,7 @@ export class MultiplayerClient {
   applyState(snapshot,seq){
     if(!snapshot||!Number.isFinite(seq)||seq<=this.stateSeq)return;
     this.stateSeq=seq;clearTimeout(this.game.botTimer);const localSettings=this.game.state.settings;
-    Object.assign(this.game.state,snapshot,{selected:new Set(),multiplayer:true,botSeats:[...this.botSeats],settings:localSettings});
+    Object.assign(this.game.state,snapshot,{selected:new Set(),multiplayer:true,multiplayerIsHost:this.isHost,botSeats:[...this.botSeats],settings:localSettings});
     this.pendingVisualState={streamId:this.room?.id||'',revision:seq,rebase:this.rebaseNextState};this.rebaseNextState=false;
     try{this.game.emit()}finally{this.pendingVisualState=null}
     this.renderGameConnection();this.renderGamePresence();
@@ -385,6 +393,7 @@ export class MultiplayerClient {
       bots_not_supported:'Ta wersja serwera nie obsługuje jeszcze botów Tichu.',
       timeout:'Serwer nie odpowiedział na czas.',websocket_error:'Nie udało się połączyć z serwerem QQND.',server_not_connected:'Utracono połączenie z serwerem.',
       invalid_play:'Tej kombinacji nie można teraz zagrać.',wish_must_be_fulfilled:'Możesz spełnić życzenie Mah Jonga, więc musisz to zrobić.',not_your_turn:'To nie jest Twój ruch.',seat_controlled_by_bot:'To miejsce jest tymczasowo kontrolowane przez bota.',
+      rematch_not_available:'Rewanż jest dostępny dopiero po zakończeniu meczu.',only_room_owner_can_rematch:'Tylko host może rozpocząć rewanż.',rematch_roster_changed:'Skład stołu zmienił się — rozpocznij nowy pokój.',rematch_players_not_connected:'Wszyscy gracze muszą być online, aby rozpocząć rewanż.',
     };
     return map[m]||m||'Błąd multiplayera';
   }

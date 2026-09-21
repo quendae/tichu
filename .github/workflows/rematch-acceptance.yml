@@ -1,0 +1,32 @@
+name: Rematch acceptance
+
+on:
+  push:
+    branches:
+      - feature/multiplayer-rematch
+  workflow_dispatch:
+
+concurrency:
+  group: multiplayer-rematch-live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rematch-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Full match and rematch acceptance
+        run: npx playwright test -c playwright.soak.config.mjs tests/e2e-multiplayer/rematch.spec.mjs
+      - name: Upload rematch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tichu-multiplayer-rematch-artifacts
+          path: test-results-multiplayer/**
+          if-no-files-found: ignore
