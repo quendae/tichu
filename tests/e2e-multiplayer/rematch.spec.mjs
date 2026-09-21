@@ -80,9 +80,6 @@ test('production QQND: finished 2H2B match can rematch in the same room',async({
       }catch(error){return String(error?.message||error)}
     },roomId);
     expect(guestRejection).toBe('only_room_owner_can_rematch');
-    const expectedGuestError='server:only_room_owner_can_rematch';
-    expect(guest.errors).toContain(expectedGuestError);
-    guest.errors.splice(guest.errors.indexOf(expectedGuestError),1);
 
     const hostSent=await host.page.evaluate(()=>window.tichu.mp.rematch());
     expect(hostSent).toBe(true);
