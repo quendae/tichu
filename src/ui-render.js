@@ -151,7 +151,12 @@ function renderRoundSummary(state){
   if(state.phase==='round-end')host.innerHTML=`<div class="summary-card summary-round-card"><span class="summary-kicker">RUNDA ${state.round} ZAKOŃCZONA</span><h2>Koniec rundy</h2><div class="summary-block"><small>PUNKTY TEJ RUNDY</small><div class="summary-score summary-round-score"><span><b>${state.roundScore?.[0]??0}</b> My</span><i>:</i><span><b>${state.roundScore?.[1]??0}</b> Oni</span></div></div>${matchScoreHTML(state)}<button type="button" data-inline="next-round" class="primary summary-primary">Graj następną rundę</button></div>`;
   else{
     const won=state.winnerTeam===0;
-    host.innerHTML=`<div class="summary-card summary-match-card ${won?'won':'lost'}"><span class="summary-outcome">${won?'ZWYCIĘSTWO':'PORAŻKA'}</span><h2>${won?'Wygrywacie mecz!':'Mecz wygrywają rywale'}</h2>${matchScoreHTML(state)}<button type="button" data-inline="new-match" class="primary summary-primary">Zagraj ponownie</button></div>`;
+    const multiplayer=state.multiplayer===true;
+    const canRematch=!multiplayer||state.multiplayerIsHost===true;
+    const rematchControl=canRematch
+      ?'<button type="button" data-inline="new-match" class="primary summary-primary">Zagraj ponownie</button>'
+      :'<p class="summary-waiting">Czekamy, aż host rozpocznie rewanż</p>';
+    host.innerHTML=`<div class="summary-card summary-match-card ${won?'won':'lost'}"><span class="summary-outcome">${won?'ZWYCIĘSTWO':'PORAŻKA'}</span><h2>${won?'Wygrywacie mecz!':'Mecz wygrywają rywale'}</h2>${matchScoreHTML(state)}${rematchControl}</div>`;
   }
 }
 
