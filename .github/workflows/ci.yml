@@ -181,6 +181,9 @@ jobs:
     if: github.ref == 'refs/heads/feature/multiplayer-soak-stress'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    concurrency:
+      group: multiplayer-soak-stress-${{ github.ref }}
+      cancel-in-progress: true
     env:
       SOAK_ROOMS: 4
       SOAK_CHURN_ROOMS: 8
