@@ -2,6 +2,10 @@
 
 Przeglądarkowa wersja klasycznego **Tichu** dla czterech graczy. Projekt korzysta z tej samej infrastruktury multiplayer QQND co `quendae/Skat`, ale ma osobny silnik reguł i własną oprawę stołu.
 
+## Wydanie stabilne
+
+**v1.0.0 — 2026-09-21.** Pierwsze stabilne wydanie obejmuje pełną grę lokalną, Bot AI v1, server-authoritative multiplayer, reconnect i bot takeover, responsive/cross-browser acceptance oraz produkcyjny soak. Szczegóły i wyniki acceptance: [CHANGELOG.md](CHANGELOG.md).
+
 ## Co jest zaimplementowane
 
 - lokalna gra 1 gracz + 3 boty;
@@ -128,7 +132,7 @@ Rozgrywka online jest **server-authoritative**: klient wysyła wyłącznie akcje
 
 Obsługa Tichu po stronie serwera znajduje się w osobnym repozytorium `quendae/qqnd-game-server`. Server Bot AI v1 został zmergowany jako PR #11; authoritative boty używają domyślnie profilu `strategic`. `baseline` pozostaje dostępny do testów i porównań.
 
-Integracja zachowuje istniejący mechanizm sesji, pokojów, Quick Play, 60-sekundowego reconnect grace i przejęcia miejsca przez bota.
+Integracja zachowuje istniejący mechanizm sesji, pokojów, Quick Play, 60-sekundowego reconnect grace i przejęcia miejsca przez bota. Przed wydaniem 1.0 poprawiono również lifecycle zakończonych authoritative pokojów: po `match-end` pokój przechodzi do `finished`, dzięki czemu cleanup po meczu nie uruchamia ponownie reconnect grace.
 
 ### Multiplayer E2E
 
@@ -163,8 +167,8 @@ Bridge testowy istnieje wyłącznie przy `?e2e=1` i udostępnia tylko stan już 
 - `src/ui.js` — renderowanie i obsługa interakcji;
 - `tests/fixtures/bot-strategy-v1.json` — canonical parity fixture corpus;
 - `tests/` — testy reguł, Bot AI, regresji, symulacji oraz Playwright dla UI;
-- `tests/e2e-multiplayer/` — produkcyjne scenariusze multiplayer 2H+2B, 4H i bot takeover.
+- `tests/e2e-multiplayer/` — produkcyjne scenariusze multiplayer 2H+2B, 4H, takeover, edge cases i soak.
 
 ## Status
 
-Bot AI v1 przeszedł pełny acceptance, parity client/server, no-cheat boundary, timing guardrail oraz produkcyjny rollout smoke. Profil `strategic` jest domyślny dla botów lokalnych i authoritative botów serwera, a `baseline` pozostaje zamrożonym profilem referencyjnym. Projekt nadal ma deterministyczne pełne symulacje, responsive Playwright E2E i produkcyjne testy multiplayer przez QQND Game Server.
+**v1.0.0** jest pierwszym stabilnym wydaniem. Bot AI v1 przeszedł pełny acceptance, parity client/server, no-cheat boundary i timing guardrail. Multiplayer przeszedł pełne mecze, edge cases, cross-browser/device acceptance, UX acceptance oraz produkcyjny soak po poprawce lifecycle backendu. Profil `strategic` jest domyślny dla botów lokalnych i authoritative botów serwera, a `baseline` pozostaje zamrożonym profilem referencyjnym. Funkcje po 1.0 (m.in. Bot AI v2, spectator/replay/rematch/statystyki) pozostają poza zakresem tego wydania.
